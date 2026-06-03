@@ -43,17 +43,24 @@ MNT="$BUILD/mnt"
 LD="/lib/ld-linux-aarch64.so.1"
 INSTALLED_MARK="$PREFIX/.installed-rocknix"
 CORES_MARK="$PREFIX/.installed-cores"
+SELECTION="$PREFIX/.enabled-systems"   # optional: newline list of enabled system names; absent = all
 
-c_i='\033[36m'; c_w='\033[33m'; c_e='\033[31m'; c_0='\033[0m'
-log(){  printf "${c_i}[emu]${c_0} %s\n" "$*"; }
-warn(){ printf "${c_w}[emu] WARN:${c_0} %s\n" "$*" >&2; }
-die(){  printf "${c_e}[emu] ERROR:${c_0} %s\n" "$*" >&2; exit 1; }
+# Color only on an interactive terminal (so piped/GUI output is clean, no stray escapes).
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  c_i=$'\033[36m'; c_w=$'\033[33m'; c_e=$'\033[31m'; c_0=$'\033[0m'
+else
+  c_i=''; c_w=''; c_e=''; c_0=''
+fi
+log(){  printf '%s[emu]%s %s\n' "$c_i" "$c_0" "$*"; }
+warn(){ printf '%s[emu] WARN:%s %s\n' "$c_w" "$c_0" "$*" >&2; }
+die(){  printf '%s[emu] ERROR:%s %s\n' "$c_e" "$c_0" "$*" >&2; exit 1; }
 
-FORCE=0; RENDER_ONLY=0; ALL_CORES=0
+FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0
 for a in "$@"; do case "$a" in
   --force) FORCE=1 ;;
   --all-cores) ALL_CORES=1 ;;
   --render-only|--repair) RENDER_ONLY=1 ;;
+  --status) STATUS=1 ;;
   -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
   *) die "unknown arg: $a" ;;
 esac; done
@@ -74,15 +81,47 @@ URL="${BASE}/${RKVER}/${ASSET}"
 
 # ---- systems.conf helpers --------------------------------------------------
 conf_rows(){ grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$SYSTEMS_CONF"; }
-# every distinct core referenced by systems.conf (field 3 may list several, space-separated)
+# Rows we actually install: filtered by the on-device selection file if present, else all.
+conf_rows_enabled(){
+  if [ -f "$SELECTION" ]; then
+    conf_rows | while IFS='|' read -r name rest; do
+      grep -qxF "$(echo "$name" | xargs)" "$SELECTION" && printf '%s|%s\n' "$name" "$rest"
+    done
+  else
+    conf_rows
+  fi
+}
+# every distinct core referenced by the ENABLED systems (field 3 may list several)
 cores_needed(){
-  conf_rows | awk -F'|' '{
+  conf_rows_enabled | awk -F'|' '{
     gsub(/^[ \t]+|[ \t]+$/,"",$3); n=split($3,a,/[ \t]+/);
     for(i=1;i<=n;i++) if(a[i]!="") print a[i]
   }' | sort -u
 }
-# what this run wants, as a stable key (cores + all-cores flag) for change detection
+# what this run wants, as a stable key (enabled cores + all-cores flag) for change detection
 want_key(){ echo "$(cores_needed | tr '\n' ' ')|all=$ALL_CORES"; }
+
+# count rom files in a system's dir (matching its extensions; recursive)
+rom_count(){  # $1=system name  $2=space-separated extensions
+  local dir="$ROMS/$1" e args=()
+  [ -d "$dir" ] || { echo 0; return; }
+  for e in $2; do args+=(-o -iname "*.$e"); done
+  find "$dir" -type f \( "${args[@]:1}" \) 2>/dev/null | grep -ivE '\.(txt|xml|cfg|opt|state|srm)$' | wc -l | tr -d ' '
+}
+# machine-readable inventory for the GUI: name|fullname|enabled|coresInstalled|coresTotal|roms|defaultInstalledCore
+print_status(){
+  conf_rows | while IFS='|' read -r name full corelist exts platform; do
+    name=$(echo "$name"|xargs); full=$(echo "$full"|xargs)
+    local total=0 inst=0 def="" c
+    for c in $corelist; do
+      total=$((total+1))
+      if [ -f "$PREFIX/cores/${c}_libretro.so" ]; then inst=$((inst+1)); [ -z "$def" ] && def="$c"; fi
+    done
+    local enabled=1
+    [ -f "$SELECTION" ] && { grep -qxF "$name" "$SELECTION" && enabled=1 || enabled=0; }
+    printf '%s|%s|%s|%s|%s|%s|%s\n' "$name" "$full" "$enabled" "$inst" "$total" "$(rom_count "$name" "$exts")" "$def"
+  done
+}
 
 # ---- generate EmulationStation es_systems.cfg (superset + <emulators>) ------
 gen_es_systems(){
@@ -94,8 +133,8 @@ gen_es_systems(){
   echo '<systemList>'
   # preserve PanicOS's own systems verbatim from the pristine backup
   [ -f "$ES_ORIG" ] && awk '/<system>/{f=1} f{print} /<\/system>/{f=0}' "$ES_ORIG"
-  # our managed console systems
-  conf_rows | while IFS='|' read -r name full corelist exts platform; do
+  # our managed console systems (only those enabled in the on-device selection)
+  conf_rows_enabled | while IFS='|' read -r name full corelist exts platform; do
     name=$(echo "$name" | xargs); full=$(echo "$full" | xargs); platform=$(echo "$platform" | xargs)
     # keep only cores actually installed in the sandbox; preserve order; first = default
     local installed=() c
@@ -147,7 +186,7 @@ render_configs(){
   fi
   gen_es_systems > "${ES_TARGET}.tmp" && mv "${ES_TARGET}.tmp" "$ES_TARGET"
   rm -f "$ES_STALE" 2>/dev/null || true
-  conf_rows | awk -F'|' '{gsub(/[[:space:]]/,"",$1); print $1}' | while read -r s; do
+  conf_rows_enabled | awk -F'|' '{gsub(/[[:space:]]/,"",$1); print $1}' | while read -r s; do
     [ -n "$s" ] && mkdir -p "$ROMS/$s"
   done
   # install/refresh the on-device "Update Emulators" Ports menu entry (kept in sync with the repo)
@@ -243,6 +282,7 @@ graft(){
 
 # ---------------------------------------------------------------------------
 main(){
+  if [ "$STATUS" = 1 ]; then print_status; exit 0; fi
   log "panicos-emu — target ROCKNIX $RKVER ($TARGET/$ARCH)"
 
   if [ "$RENDER_ONLY" = 1 ]; then
