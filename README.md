@@ -39,7 +39,7 @@ ROCKNIX release ──(daily GitHub Action, auto-commit)──▶ rocknix.lock o
                                                               │
         you run "Update Emulators" on the device  ◀──────────┘   (manual · needs Wi-Fi)
                       │
-                      ├─ git pull this repo (read-only deploy key)
+                      ├─ git pull this repo (public HTTPS)
                       └─ bin/panicos-emu-install.sh
                             ├─ fetch the ROCKNIX SYSTEM image for the locked version
                             ├─ extract RetroArch + every core in systems.conf (+ full lib closure)
@@ -70,25 +70,37 @@ bash bin/panicos-emu-install.sh --all-cores
 ```
 The choice is remembered across updates.
 
-## 🚀 Install (once, over SSH)
+## 🚀 Install
 
-SSH into your device (it's `root`, password `panicos` by default) and run **one line**:
+Pick whichever you like — **no SSH required** for the first option.
 
+### A) PortMaster autoinstall (no computer login)
+1. Download **`panicos-emu.zip`** from the [latest release](https://github.com/seajaysec/panicos-emu/releases/latest).
+2. Copy it onto the device at **`/storage/roms/ports/autoinstall/`** (over the SD card, USB, or scp).
+3. Launch **PortMaster** once (or reboot). It installs an **Update Emulators** entry into **Ports**.
+4. Run **Update Emulators** → it sets itself up and opens the on-device manager (needs Wi-Fi the first time).
+
+### B) One-liner (SSH)
+SSH in (`root` / `panicos` by default) and run:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/seajaysec/panicos-emu/master/bootstrap.sh | bash
 ```
+Add `| bash -s -- --all-cores` for every ROCKNIX core (full parity).
 
-That clones the repo, downloads RetroArch + cores from ROCKNIX, wires up EmulationStation, and
-drops the **Update Emulators** entry into Ports. First run takes a few minutes (it pulls the
-ROCKNIX image). Want every ROCKNIX core for full parity? add an argument:
+Either way: **restart EmulationStation** (Quit) or reboot to see the systems, then copy ROMs into
+`/storage/roms/<system>/`. After setup, everything is done from the device — see below.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/seajaysec/panicos-emu/master/bootstrap.sh | bash -s -- --all-cores
-```
+## 🕹️ On-device manager (the "Update Emulators" entry)
 
-Then **restart EmulationStation** (Quit from the menu) or reboot. Copy your ROMs into
-`/storage/roms/<system>/`. After this, **updates are just the "Update Emulators" entry under
-Ports** — no SSH, no keys.
+A fullscreen, gamepad-driven SDL2 app. From the main menu:
+- **Manage emulators** — a per-system list showing **installed / partial / missing** cores and rom
+  counts (green / yellow / red). Toggle the systems you want (**A**), or **Y** = all, **X** = all
+  missing; **Start** applies — it fetches just the chosen targets and regenerates EmulationStation.
+- **Update** — sync with ROCKNIX and re-apply your selection.
+- **Install ALL cores** — full ROCKNIX parity.
+- **Uninstall (keep ROMs)**.
+
+Live progress streams on-screen. **D-pad** moves · **A** selects · **B/Select** back/quit.
 
 <details><summary>Private fork? (deploy-key setup)</summary>
 
