@@ -16,6 +16,7 @@ PanicOS is a deliberately lean, ROCKNIX-lineage appliance for the norns/PanicTra
 
 - **13 console systems** out of the box — Game Boy/Color, NES, SNES, GBA, Genesis, Master System, Game Gear, ColecoVision, Neo Geo Pocket, PC Engine, WonderSwan, N64, Nintendo DS.
 - **Multiple cores per system**, pickable per-game in the EmulationStation UI (e.g. SNES → `snes9x` / `snes9x2010` / `beetle_supafaust`). First listed is the default.
+- **ROCKNIX's device-tuned QOL, inherited** — its full base `retroarch.cfg`, **153 per-core option presets** (mupen64 `4:3`/dynamic-recompiler, melonDS layout/JIT, …), per-core `.opt` files, and **1,800+ slang shaders** (LCD/scanline/CRT filters for the 640×480 panel) — all layered *under* our PanicOS overrides so nothing regresses.
 - **Self-updating** — a GitHub Action tracks ROCKNIX daily; an on-device **Update Emulators** menu entry applies updates when *you* choose.
 - **Correct on this exact hardware** — Wayland/`glcore` video and SDL2→PipeWire audio routed exactly the way PanicOS routes everything else (no muted-sink surprises, no codec-rate crackle).
 - **Reversible & non-invasive** — everything lives in `/storage` plus one backed-up `/etc` file. One command restores stock.
@@ -25,7 +26,7 @@ PanicOS is a deliberately lean, ROCKNIX-lineage appliance for the norns/PanicTra
 | Layer | Source | Edited? | Lands on device |
 |------|--------|---------|-----------------|
 | **Upstream** | ROCKNIX public releases — RetroArch, cores, libs, gamepad autoconfig | never | `/storage/emulators/retroarch/{bin,lib,cores,autoconfig}` |
-| **Override** | this repo — `config/`, `systems.conf` (always wins) | yes, by you | `config/retroarch.cfg`, `/etc/emulationstation/es_systems.cfg` |
+| **Override** | this repo — `config/retroarch.cfg` (PanicOS appendconfig, always wins), `systems.conf` | yes, by you | `config/panicos-override.cfg`, `/etc/emulationstation/es_systems.cfg` |
 | **Content** | your ROMs | — | `/storage/roms/<system>/` |
 
 ### The hard invariant
@@ -114,8 +115,9 @@ Then restart EmulationStation. PanicOS / norns / USB / audio are untouched eithe
 ```
 rocknix.lock                   pinned ROCKNIX version (auto-bumped by the Action)
 systems.conf                   declarative systems + cores
-config/retroarch.cfg           RetroArch config (sdl2 audio @48k, glcore video)
-config/retroarch.sh            sandbox launch wrapper (core selection + fallback + logging)
+config/retroarch.cfg           PanicOS override layer (sdl2 audio @48k, glcore, sandbox paths)
+                               -> applied via --appendconfig over ROCKNIX's pulled base config
+config/retroarch.sh            sandbox launch wrapper (config layering + core selection + logging)
 bin/panicos-emu-install.sh     installer / updater (idempotent, self-healing, --all-cores)
 bin/panicos-emu-uninstall.sh   full revert
 ports/Update Emulators.sh      on-device menu entry (git pull + install)
