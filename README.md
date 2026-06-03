@@ -70,25 +70,39 @@ bash bin/panicos-emu-install.sh --all-cores
 ```
 The choice is remembered across updates.
 
-## 🚀 First-time setup (once, over SSH)
+## 🚀 Install (once, over SSH)
 
-The device pulls this private repo with a read-only **deploy key**:
+SSH into your device (it's `root`, password `panicos` by default) and run **one line**:
+
 ```sh
-# on the device (HOME=/storage)
-ssh-keygen -t ed25519 -N "" -f /storage/.ssh/id_ed25519_panicos_emu
+curl -fsSL https://raw.githubusercontent.com/seajaysec/panicos-emu/master/bootstrap.sh | bash
+```
 
-# register the PUBLIC key as a read-only Deploy Key (from a machine with gh)
+That clones the repo, downloads RetroArch + cores from ROCKNIX, wires up EmulationStation, and
+drops the **Update Emulators** entry into Ports. First run takes a few minutes (it pulls the
+ROCKNIX image). Want every ROCKNIX core for full parity? add an argument:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/seajaysec/panicos-emu/master/bootstrap.sh | bash -s -- --all-cores
+```
+
+Then **restart EmulationStation** (Quit from the menu) or reboot. Copy your ROMs into
+`/storage/roms/<system>/`. After this, **updates are just the "Update Emulators" entry under
+Ports** — no SSH, no keys.
+
+<details><summary>Private fork? (deploy-key setup)</summary>
+
+If you fork this **private**, the one-liner can't fetch it without auth. Either make your fork
+public, or add a read-only deploy key and clone over SSH:
+```sh
+ssh-keygen -t ed25519 -N "" -f /storage/.ssh/id_ed25519_panicos_emu          # on the device
 gh repo deploy-key add /path/to/id_ed25519_panicos_emu.pub -R <you>/panicos-emu -t panicos-device
-
-# clone with that key, then install + add the menu entry
 git -c core.sshCommand="ssh -i /storage/.ssh/id_ed25519_panicos_emu -o IdentitiesOnly=yes" \
     clone git@github.com:<you>/panicos-emu.git /storage/.panicos-emu
-git -C /storage/.panicos-emu config core.sshCommand \
-    "ssh -i /storage/.ssh/id_ed25519_panicos_emu -o IdentitiesOnly=yes"
+git -C /storage/.panicos-emu config core.sshCommand "ssh -i /storage/.ssh/id_ed25519_panicos_emu -o IdentitiesOnly=yes"
 bash /storage/.panicos-emu/bin/panicos-emu-install.sh
-cp "/storage/.panicos-emu/ports/Update Emulators.sh" /storage/roms/ports/
 ```
-Restart EmulationStation. After this, updating is just the **Update Emulators** menu item.
+</details>
 
 ## 🎮 Controls & BIOS
 
