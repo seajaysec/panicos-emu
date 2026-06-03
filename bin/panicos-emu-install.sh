@@ -149,7 +149,12 @@ render_configs(){
   conf_rows | awk -F'|' '{gsub(/[[:space:]]/,"",$1); print $1}' | while read -r s; do
     [ -n "$s" ] && mkdir -p "$ROMS/$s"
   done
-  log "configs rendered ($(grep -c '<name>' "$ES_TARGET") ES systems -> $ES_TARGET)"
+  # install/refresh the on-device "Update Emulators" Ports menu entry (kept in sync with the repo)
+  if [ -f "$REPO_DIR/ports/Update Emulators.sh" ]; then
+    mkdir -p "$ROMS/ports"
+    install -m 0755 "$REPO_DIR/ports/Update Emulators.sh" "$ROMS/ports/Update Emulators.sh"
+  fi
+  log "configs rendered ($(grep -c '<name>' "$ES_TARGET") ES systems -> $ES_TARGET; menu entry refreshed)"
 }
 
 # ---- resolve full shared-lib closure from a mounted ROCKNIX SYSTEM ---------
