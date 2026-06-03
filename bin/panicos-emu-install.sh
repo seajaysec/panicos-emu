@@ -191,11 +191,21 @@ main(){
     log "render-only: done."; exit 0
   fi
 
+  # Decide whether to (re)graft: forced, version changed, binary missing, or a core that
+  # systems.conf now references isn't in the sandbox yet (so "add a line + update" just works).
   local cur=""; [ -f "$INSTALLED_MARK" ] && cur=$(cat "$INSTALLED_MARK")
-  if [ "$cur" = "$RKVER" ] && [ "$FORCE" = 0 ] && [ -x "$PREFIX/bin/retroarch" ]; then
-    log "ROCKNIX $RKVER already grafted; configs refreshed. (use --force to re-graft binaries)"
-  else
+  local need=0 missing="" c
+  [ "$FORCE" = 1 ] && need=1
+  [ "$cur" != "$RKVER" ] && need=1
+  [ -x "$PREFIX/bin/retroarch" ] || need=1
+  for c in $(cores_needed); do
+    [ -f "$PREFIX/cores/${c}_libretro.so" ] || { need=1; missing="$missing $c"; }
+  done
+  if [ "$need" = 1 ]; then
+    [ -n "$missing" ] && log "missing core(s):$missing — grafting"
     graft
+  else
+    log "ROCKNIX $RKVER already grafted with all configured cores; configs refreshed."
   fi
 
   # quick self-test: binary + every core resolve cleanly
