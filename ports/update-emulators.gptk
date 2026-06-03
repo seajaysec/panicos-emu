@@ -1,0 +1,22 @@
+# gptokeyb map for the Update Emulators menu (gamepad -> keyboard).
+# D-pad / left stick move the cursor; A selects; B or Select quit.
+up = up
+down = down
+left = left
+right = right
+a = enter
+b = escape
+x = escape
+y = escape
+start = enter
+back = escape
+l1 = pageup
+r1 = pagedown
+l2 = ""
+r2 = ""
+left_analog_up = up
+left_analog_down = down
+left_analog_left = left
+left_analog_right = right
+deadzone = 8000
+deadzone_mode = axial

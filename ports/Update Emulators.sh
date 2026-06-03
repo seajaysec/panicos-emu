@@ -1,40 +1,34 @@
 #!/bin/bash
 ###############################################################################
-# Update Emulators.sh  —  on-device entry point (lands in Ports as "Update Emulators")
-#
-# Pulls the latest panicos-emu repo (which auto-tracks ROCKNIX) and runs the
-# installer. Requires network. Applies nothing unattended — you launch it.
-#
-# Installed to /storage/roms/ports/ by the installer's --add-port step (or copy
-# it there manually). Progress prints to screen and to the log below.
+# Update Emulators.sh — lands in Ports as "Update Emulators".
+# Opens a fullscreen terminal (foot) with a gamepad-navigable menu to update /
+# install / uninstall the emulator suite. Drives the repo clone at /storage/.panicos-emu.
 ###############################################################################
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+# PortMaster control.txt gives us $GPTOKEYB, get_controls, $CFW_NAME (gamepad mapping helpers)
+XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
+for d in /opt/system/Tools/PortMaster /opt/tools/PortMaster "$XDG_DATA_HOME/PortMaster" /roms/ports/PortMaster; do
+  [ -d "$d" ] && controlfolder="$d" && break
+done
+[ -n "$controlfolder" ] && source "$controlfolder/control.txt" 2>/dev/null
+[ -n "${CFW_NAME:-}" ] && [ -f "$controlfolder/mod_${CFW_NAME}.txt" ] && source "$controlfolder/mod_${CFW_NAME}.txt" 2>/dev/null
+type get_controls >/dev/null 2>&1 && get_controls
+
 CLONE="/storage/.panicos-emu"
-LOG="/storage/roms/ports/Update Emulators.log"
+GPTK="$CLONE/ports/update-emulators.gptk"
+TUI="$CLONE/ports/update-emulators-tui.sh"
+FONT="monospace:size=18"
 
-exec > >(tee "$LOG") 2>&1
-echo "=================================================="
-echo " panicos-emu :: Update Emulators"
-echo "=================================================="
-
-if [ ! -d "$CLONE/.git" ]; then
-  echo "ERROR: repo clone not found at $CLONE"
-  echo "Set it up once over SSH (see repo README: 'Wire device deploy key + clone')."
-  sleep 8; exit 1
+if [ ! -f "$TUI" ]; then
+  foot --fullscreen -f "$FONT" -e bash -c \
+    'echo "panicos-emu is not installed (expected /storage/.panicos-emu)."; echo; echo "Re-run the bootstrap over SSH. See the repo README."; sleep 8' 2>/dev/null
+  exit 1
 fi
 
-echo "* checking network…"
-if ! timeout 8 ping -c1 github.com >/dev/null 2>&1; then
-  echo "ERROR: no network. Connect Wi-Fi and try again."
-  sleep 8; exit 1
-fi
+# gamepad -> keyboard for the menu; gptokeyb watches "foot" and exits when it closes.
+[ -n "${GPTOKEYB:-}" ] && $GPTOKEYB "foot" -c "$GPTK" &
 
-echo "* pulling latest panicos-emu…"
-git -C "$CLONE" pull --ff-only || { echo "git pull failed"; sleep 8; exit 1; }
+foot --fullscreen -f "$FONT" -e bash "$TUI"
 
-echo "* running installer…"
-bash "$CLONE/bin/panicos-emu-install.sh" "$@" || { echo "installer failed"; sleep 8; exit 1; }
-
-echo
-echo "Done. Restart EmulationStation (Main Menu > Quit > Restart) or reboot"
-echo "to pick up any new systems. Log: $LOG"
-sleep 6
+pkill -f "gptokeyb.*foot" 2>/dev/null || true
