@@ -13,15 +13,21 @@ self-contained `/storage` sandbox and keeps it updatable against both ROCKNIX an
 | Layer | Source | Edited? | Where it lands on device |
 |-------|--------|---------|--------------------------|
 | **Upstream** | ROCKNIX public releases (RetroArch binary, cores, libs, gamepad autoconfig) | never | `/storage/emulators/retroarch/{bin,lib,cores,autoconfig}` |
-| **Override** | this repo (`config/`, `systems.conf`) — always wins | yes, by you | `/storage/emulators/retroarch/config`, `/storage/.emulationstation/es_systems.cfg` |
+| **Override** | this repo (`config/`, `systems.conf`) — always wins | yes, by you | `/storage/emulators/retroarch/config`, `/etc/emulationstation/es_systems.cfg` |
 | **Content** | your ROMs | — | `/storage/roms/<system>/` |
 
 ### Hard invariant
-The installer only ever writes under `/storage/emulators/retroarch`, `/storage/roms`, and
-`/storage/.emulationstation/es_systems.cfg`. It **never** touches `/usr`, `/etc`, the audio
-codec pin, norns, or ports — so it cannot conflict with a PanicOS deviation. The ES override is
-regenerated each run as a **superset of PanicOS's live `/etc` systems** (so PanicOS's own
-choices are inherited, never frozen), and it self-heals if a PanicOS update clobbers it.
+The installer writes only under `/storage/emulators/retroarch`, `/storage/roms`, and a single
+system file: `/etc/emulationstation/es_systems.cfg`.
+
+This EmulationStation build reads `es_systems.cfg` **only from `/etc`** (it ignores
+`~/.emulationstation/`), so the systems must live there — which is exactly the
+**overlay-layering the PanicOS maintainer sanctioned** in that file's own comment. `/etc` is an
+overlay (a writable upper on `/storage-base`), so the change is **additive and fully reversible**:
+before the first write we save the pristine file to `es_systems.cfg.panicos-orig`, and the
+generated file is always rebuilt as a **superset of that pristine backup** (PanicOS's own
+tools/ports inherited verbatim, never frozen or compounded). It still **never** touches `/usr`,
+the audio codec pin, norns, or ports, and self-heals if PanicOS replaces the file.
 
 ## How updates flow
 
