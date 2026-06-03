@@ -155,6 +155,14 @@ render_configs(){
     mkdir -p "$ROMS/ports"
     install -m 0755 "$REPO_DIR/ports/Update Emulators.sh" "$ROMS/ports/Update Emulators.sh"
   fi
+  # merge our tuned core-option overrides into the (ROCKNIX-provided) core options, idempotently:
+  # drop any existing line for a key we manage, then append ours (survives RA rewrites + re-runs)
+  local COREOPTS="$PREFIX/config/retroarch-core-options.cfg" APP="$REPO_DIR/config/core-options.append"
+  if [ -f "$APP" ] && [ -f "$COREOPTS" ]; then
+    awk -F' = ' 'NR==FNR{if($1 !~ /^#/ && $1!="")k[$1]=1;next} !($1 in k)' "$APP" "$COREOPTS" > "$COREOPTS.tmp" \
+      && cat "$APP" >> "$COREOPTS.tmp" && mv "$COREOPTS.tmp" "$COREOPTS"
+    log "core-option overrides merged ($(grep -cE '^[a-z].* = ' "$APP" 2>/dev/null || echo 0) keys)"
+  fi
   log "configs rendered ($(grep -c '<name>' "$ES_TARGET") ES systems -> $ES_TARGET; menu entry refreshed)"
 }
 

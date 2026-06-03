@@ -1,0 +1,12 @@
+# panicos-emu core-option overrides — merged into RetroArch's retroarch-core-options.cfg by the
+# installer (our keys replace any upstream value; idempotent). Add tuned per-core defaults here.
+
+# --- Nintendo DS (melonDS DS / melondsds): a "Next Layout" button cycles these 3 layouts ---
+# dual view -> top screen only -> bottom screen only -> (repeat). The separate "Swap Screen"
+# button still flips top/bottom. Right analog stick acts as the stylus (dual-stick device).
+melonds_number_of_screen_layouts = "3"
+melonds_screen_layout1 = "Top/Bottom"
+melonds_screen_layout2 = "Top Only"
+melonds_screen_layout3 = "Bottom Only"
+melonds_touch_mode = "Joystick"
+melonds_threaded_renderer = "enabled"
