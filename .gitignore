@@ -1,0 +1,7 @@
+# Nothing built/binary is committed — the suite is fetched from ROCKNIX on-device.
+*.log
+*.tar
+*.img
+*.img.gz
+SYSTEM
+.DS_Store

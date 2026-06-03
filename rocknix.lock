@@ -1,0 +1,9 @@
+{
+  "_comment": "Pins the ROCKNIX release the emulator suite is grafted from. The GitHub Action (.github/workflows/sync-rocknix.yml) auto-bumps rocknix_version to the latest ROCKNIX release. Nothing reaches the device until you run the on-device 'Update Emulators' menu entry.",
+  "rocknix_repo": "ROCKNIX/distribution",
+  "rocknix_version": "20260601",
+  "target": "H700",
+  "arch": "aarch64",
+  "release_base": "https://github.com/ROCKNIX/distribution/releases/download",
+  "system_member": "target/SYSTEM"
+}

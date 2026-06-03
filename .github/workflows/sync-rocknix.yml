@@ -1,0 +1,64 @@
+name: sync-rocknix
+
+# Auto-tracks ROCKNIX upstream. When ROCKNIX publishes a new release, this bumps
+# rocknix.lock and commits straight to main (per project decision). Nothing reaches
+# any device until someone runs the on-device "Update Emulators" entry.
+
+on:
+  schedule:
+    - cron: "17 8 * * *"   # daily ~08:17 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve latest ROCKNIX release
+        id: rk
+        run: |
+          repo=$(jq -r .rocknix_repo rocknix.lock)
+          latest=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" | jq -r .tag_name)
+          # only accept the expected tag shape (YYYYMMDD[.N]) — refuse anything else
+          case "$latest" in
+            [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].*) : ;;
+            *) echo "::warning::unexpected ROCKNIX tag '$latest'; ignoring"; latest="" ;;
+          esac
+          {
+            echo "latest=$latest"
+            echo "current=$(jq -r .rocknix_version rocknix.lock)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify the H700 asset exists for that release
+        id: verify
+        env:
+          LATEST: ${{ steps.rk.outputs.latest }}
+        run: |
+          [ -n "$LATEST" ] || { echo "ok=0" >> "$GITHUB_OUTPUT"; exit 0; }
+          repo=$(jq -r .rocknix_repo rocknix.lock)
+          target=$(jq -r .target rocknix.lock); arch=$(jq -r .arch rocknix.lock)
+          asset="ROCKNIX-${target}.${arch}-${LATEST}.tar"
+          if curl -fsSLI "https://github.com/${repo}/releases/download/${LATEST}/${asset}" >/dev/null 2>&1; then
+            echo "ok=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=0" >> "$GITHUB_OUTPUT"
+            echo "::warning::asset $asset not found for $LATEST; skipping bump"
+          fi
+
+      - name: Bump rocknix.lock
+        if: steps.rk.outputs.latest != steps.rk.outputs.current && steps.rk.outputs.latest != '' && steps.verify.outputs.ok == '1'
+        env:
+          LATEST: ${{ steps.rk.outputs.latest }}
+          CURRENT: ${{ steps.rk.outputs.current }}
+        run: |
+          tmp=$(mktemp)
+          jq --arg v "$LATEST" '.rocknix_version=$v' rocknix.lock > "$tmp" && mv "$tmp" rocknix.lock
+          git config user.name  "rocknix-sync[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add rocknix.lock
+          git commit -m "chore(rocknix): bump ${CURRENT} -> ${LATEST}"
+          git push
