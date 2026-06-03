@@ -1,6 +1,5 @@
 #!/bin/bash
 # panicos-emu — fullscreen terminal menu (runs inside foot, navigated via gptokeyb).
-export LANG=C.UTF-8 LC_ALL=C.UTF-8
 CLONE="/storage/.panicos-emu"
 INSTALL="$CLONE/bin/panicos-emu-install.sh"
 UNINSTALL="$CLONE/bin/panicos-emu-uninstall.sh"

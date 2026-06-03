@@ -4,7 +4,6 @@
 # Opens a fullscreen terminal (foot) with a gamepad-navigable menu to update /
 # install / uninstall the emulator suite. Drives the repo clone at /storage/.panicos-emu.
 ###############################################################################
-export LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 # PortMaster control.txt gives us $GPTOKEYB, get_controls, $CFW_NAME (gamepad mapping helpers)
 XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
