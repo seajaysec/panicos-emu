@@ -150,6 +150,14 @@ render_configs(){
   conf_rows | awk -F'|' '{gsub(/[[:space:]]/,"",$1); print $1}' | while read -r s; do
     [ -n "$s" ] && mkdir -p "$ROMS/$s"
   done
+  # es_features.cfg — unlocks the per-game/per-system Emulator+Core selector (PanicOS ships none)
+  if [ -f "$REPO_DIR/config/es_features.cfg" ]; then
+    local ESF="/etc/emulationstation/es_features.cfg"
+    if [ -f "$ESF" ] && ! grep -q 'panicos-emu' "$ESF" && [ ! -f "$ESF.panicos-orig" ]; then
+      cp -a "$ESF" "$ESF.panicos-orig"; log "backed up stock es_features -> $ESF.panicos-orig"
+    fi
+    install -m 0644 "$REPO_DIR/config/es_features.cfg" "$ESF"
+  fi
   # install/refresh the on-device "Update Emulators" Ports menu entry (kept in sync with the repo)
   if [ -f "$REPO_DIR/ports/Update Emulators.sh" ]; then
     mkdir -p "$ROMS/ports"
