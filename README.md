@@ -1,102 +1,130 @@
-# panicos-emu
+<div align="center">
 
-Maintainable console emulation for **PanicOS** (the lean ROCKNIX-lineage norns/PanicTracker
-appliance on the Anbernic RG35XX Pro / H700), grafted from **ROCKNIX** upstream and layered
-on top **without modifying anything PanicOS owns**.
+# 🎮 panicos-emu
 
-PanicOS deliberately ships no console emulators (it's a launcher/networking flavor — see the
-comment in its `/etc/emulationstation/es_systems.cfg`). This repo adds RetroArch + cores in a
-self-contained `/storage` sandbox and keeps it updatable against both ROCKNIX and PanicOS.
+**Maintainable console emulation for [PanicOS](https://github.com/djhardrich/PanicOS), grafted from [ROCKNIX](https://rocknix.org) — without touching anything PanicOS owns.**
 
-## Design: a base + override model
+*Anbernic RG35XX Pro / Allwinner H700 · RetroArch + libretro · self-updating*
 
-| Layer | Source | Edited? | Where it lands on device |
-|-------|--------|---------|--------------------------|
-| **Upstream** | ROCKNIX public releases (RetroArch binary, cores, libs, gamepad autoconfig) | never | `/storage/emulators/retroarch/{bin,lib,cores,autoconfig}` |
-| **Override** | this repo (`config/`, `systems.conf`) — always wins | yes, by you | `/storage/emulators/retroarch/config`, `/etc/emulationstation/es_systems.cfg` |
+</div>
+
+---
+
+PanicOS is a deliberately lean, ROCKNIX-lineage appliance for the norns/PanicTracker world — it ships **no console emulators** on purpose (its own `es_systems.cfg` says so, and points you at *"layer them on top via overlay"*). `panicos-emu` is that layer: it pulls RetroArch and cores straight from ROCKNIX releases into a self-contained `/storage` sandbox, wires them into EmulationStation, and keeps the whole thing updatable against **both** ROCKNIX and PanicOS — always deferring to PanicOS where it has an opinion.
+
+## ✨ What you get
+
+- **13 console systems** out of the box — Game Boy/Color, NES, SNES, GBA, Genesis, Master System, Game Gear, ColecoVision, Neo Geo Pocket, PC Engine, WonderSwan, N64, Nintendo DS.
+- **Multiple cores per system**, pickable per-game in the EmulationStation UI (e.g. SNES → `snes9x` / `snes9x2010` / `beetle_supafaust`). First listed is the default.
+- **Self-updating** — a GitHub Action tracks ROCKNIX daily; an on-device **Update Emulators** menu entry applies updates when *you* choose.
+- **Correct on this exact hardware** — Wayland/`glcore` video and SDL2→PipeWire audio routed exactly the way PanicOS routes everything else (no muted-sink surprises, no codec-rate crackle).
+- **Reversible & non-invasive** — everything lives in `/storage` plus one backed-up `/etc` file. One command restores stock.
+
+## 🧱 Architecture — base + override
+
+| Layer | Source | Edited? | Lands on device |
+|------|--------|---------|-----------------|
+| **Upstream** | ROCKNIX public releases — RetroArch, cores, libs, gamepad autoconfig | never | `/storage/emulators/retroarch/{bin,lib,cores,autoconfig}` |
+| **Override** | this repo — `config/`, `systems.conf` (always wins) | yes, by you | `config/retroarch.cfg`, `/etc/emulationstation/es_systems.cfg` |
 | **Content** | your ROMs | — | `/storage/roms/<system>/` |
 
-### Hard invariant
-The installer writes only under `/storage/emulators/retroarch`, `/storage/roms`, and a single
-system file: `/etc/emulationstation/es_systems.cfg`.
+### The hard invariant
+The installer writes **only** under `/storage/emulators/retroarch`, `/storage/roms`, and the single file `/etc/emulationstation/es_systems.cfg` — the overlay-layering spot the PanicOS maintainer explicitly sanctioned. That file is **backed up** to `es_systems.cfg.panicos-orig` and regenerated as a **superset of the pristine original** (PanicOS's own *tools*/*ports* inherited verbatim, never frozen or compounded). The installer **never** touches `/usr`, the audio codec pin, norns, or ports — so it can't conflict with a PanicOS deviation, and it self-heals if a PanicOS update replaces the file.
 
-This EmulationStation build reads `es_systems.cfg` **only from `/etc`** (it ignores
-`~/.emulationstation/`), so the systems must live there — which is exactly the
-**overlay-layering the PanicOS maintainer sanctioned** in that file's own comment. `/etc` is an
-overlay (a writable upper on `/storage-base`), so the change is **additive and fully reversible**:
-before the first write we save the pristine file to `es_systems.cfg.panicos-orig`, and the
-generated file is always rebuilt as a **superset of that pristine backup** (PanicOS's own
-tools/ports inherited verbatim, never frozen or compounded). It still **never** touches `/usr`,
-the audio codec pin, norns, or ports, and self-heals if PanicOS replaces the file.
-
-## How updates flow
+## 🔄 How updates flow
 
 ```
-ROCKNIX release ──(daily GitHub Action, auto-commits)──▶ rocknix.lock on main
+ROCKNIX release ──(daily GitHub Action, auto-commit)──▶ rocknix.lock on the repo
                                                               │
-            you run "Update Emulators" on the device ◀────────┘ (manual; needs network)
-                          │
-                          ├─ git pull this repo
-                          └─ bin/panicos-emu-install.sh
-                                 ├─ fetch ROCKNIX SYSTEM for the locked version
-                                 ├─ extract retroarch + cores in systems.conf + full lib closure
-                                 ├─ re-render configs + es_systems (superset of live /etc)
-                                 └─ self-test; preserve saves/states/bios/roms
+        you run "Update Emulators" on the device  ◀──────────┘   (manual · needs Wi-Fi)
+                      │
+                      ├─ git pull this repo (read-only deploy key)
+                      └─ bin/panicos-emu-install.sh
+                            ├─ fetch the ROCKNIX SYSTEM image for the locked version
+                            ├─ extract RetroArch + every core in systems.conf (+ full lib closure)
+                            ├─ regenerate es_systems (superset of pristine /etc, with core selectors)
+                            └─ self-test · preserve saves/states/bios/roms
 ```
 
-- **ROCKNIX updates**: the Action bumps `rocknix.lock`; the device applies it next time you run the menu entry.
-- **PanicOS updates**: handled by PanicOS itself; our layer lives in `/storage` and survives. If a PanicOS
-  update ever replaces the ES override, the next `--render-only`/update run rebuilds it from the new `/etc`.
-- Binaries are **never committed** — always pulled fresh from ROCKNIX, so the repo stays tiny and current.
+- **ROCKNIX updates** — the Action bumps `rocknix.lock`; the device applies it next time you run the menu entry. Nothing is ever applied unattended.
+- **PanicOS updates** — handled by PanicOS; our `/storage` layer survives, and the next run rebuilds the `/etc` override from the new pristine stock.
+- **Binaries are never committed** — always fetched fresh from ROCKNIX, so the repo stays tiny and current.
 
-## Files
+## ⚙️ Configuration
 
+### `systems.conf` — declarative, one line per console
 ```
-rocknix.lock                  pinned ROCKNIX version + target (auto-bumped by the Action)
-systems.conf                  declarative ES systems: name|fullname|core|exts|platform
-config/retroarch.cfg          our RetroArch config (48kHz to match the codec pin, glcore)
-config/retroarch.sh           sandbox launch wrapper
-bin/panicos-emu-install.sh    installer/updater (idempotent, self-healing)
-bin/panicos-emu-uninstall.sh  full revert
-ports/Update Emulators.sh     on-device menu entry (git pull + install)
-.github/workflows/sync-rocknix.yml   daily ROCKNIX tracker (auto-commit to main)
+# name | fullname | cores (first = default) | extensions | platform
+snes | Super Nintendo | snes9x snes9x2010 beetle_supafaust | sfc smc | snes
+nds  | Nintendo DS    | melonds desmume melondsds          | nds     | nds
 ```
+- **Add a system or an alternate core:** edit a line → commit → run **Update Emulators**. The installer fetches what's needed and regenerates everything. Cores ROCKNIX doesn't ship are skipped automatically (never fatal).
+- **Pick a core per game:** in EmulationStation, *Game Options → Core*. The wrapper validates the choice and falls back to the default if needed, so a game always launches.
 
-## Add a system / change a core
-Edit `systems.conf` (one line), commit, then run **Update Emulators** on the device. Done.
+### Full ROCKNIX parity
+Want *every* core ROCKNIX builds available, not just the ones in `systems.conf`?
+```sh
+bash bin/panicos-emu-install.sh --all-cores
+```
+The choice is remembered across updates.
 
-## First-time device setup (one-time, over SSH)
+## 🚀 First-time setup (once, over SSH)
 
 The device pulls this private repo with a read-only **deploy key**:
-
 ```sh
-# on the device (HOME=/storage), generate a key
+# on the device (HOME=/storage)
 ssh-keygen -t ed25519 -N "" -f /storage/.ssh/id_ed25519_panicos_emu
 
-# add the PUBLIC key as a read-only Deploy Key (from a machine with gh):
-gh repo deploy-key add /path/to/id_ed25519_panicos_emu.pub -R seajaysec/panicos-emu -t panicos-device
+# register the PUBLIC key as a read-only Deploy Key (from a machine with gh)
+gh repo deploy-key add /path/to/id_ed25519_panicos_emu.pub -R <you>/panicos-emu -t panicos-device
 
-# clone on the device using that key
+# clone with that key, then install + add the menu entry
 git -c core.sshCommand="ssh -i /storage/.ssh/id_ed25519_panicos_emu -o IdentitiesOnly=yes" \
-    clone git@github.com:seajaysec/panicos-emu.git /storage/.panicos-emu
+    clone git@github.com:<you>/panicos-emu.git /storage/.panicos-emu
 git -C /storage/.panicos-emu config core.sshCommand \
     "ssh -i /storage/.ssh/id_ed25519_panicos_emu -o IdentitiesOnly=yes"
-
-# install + drop the Ports menu entry
 bash /storage/.panicos-emu/bin/panicos-emu-install.sh
 cp "/storage/.panicos-emu/ports/Update Emulators.sh" /storage/roms/ports/
 ```
+Restart EmulationStation. After this, updating is just the **Update Emulators** menu item.
 
-Then restart EmulationStation. After this, updates are just the **Update Emulators** menu item.
+## 🎮 Controls & BIOS
 
-## Controls (ROCKNIX `H700 Gamepad` autoconfig)
-In game: **hotkey = button 10**. hotkey+START = quit, hotkey+X = RetroArch menu,
-hotkey+L1/R1 = save/load state.
+- **Gamepad** is auto-configured from ROCKNIX's exact `H700 Gamepad` profile. In game: **hotkey (button 10)** + **START** = quit · **+ X** = RetroArch menu · **+ L1/R1** = save/load state.
+- **BIOS** goes in `/storage/roms/bios/`. Most systems need none. Nintendo DS uses `bios7.bin`/`bios9.bin`/`firmware.bin` if present (else melonDS FreeBIOS); ColecoVision needs `colecovision.rom`; PC-Engine CD needs `syscard3.pce`.
 
-## Uninstall
-`bash bin/panicos-emu-uninstall.sh` (add `--keep-roms` to keep your ROMs), then restart ES.
+## 🩺 Troubleshooting
 
-## Notes
-- ColecoVision needs `colecovision.rom` in `/storage/roms/bios`; PC-Engine CD needs `syscard3.pce`.
-- If a game black-screens, change `video_driver` to `gl` or `sdl2` in `config/retroarch.cfg`, commit, re-run.
-- Provenance: grafted from `ROCKNIX-H700.aarch64` (same SoC/Panfrost+Vulkan stack as PanicOS).
+| Symptom | Fix |
+|--------|-----|
+| New system not showing | Restart EmulationStation (Quit → it relaunches). es_systems changes need a reload. |
+| Game black-screens | Set `video_driver` to `gl` then `sdl2` in `config/retroarch.cfg`, commit, re-run. |
+| No sound | Audio must be `sdl2` (PanicOS routes via SDL→PipeWire to the codec; RA's native pipewire driver hits a muted sink). |
+| A game crashes instantly | Check `/storage/emulators/retroarch/last-launch.log` — it records the core, ROM, env, and RetroArch's full output. |
+| DS game won't boot | Add real DS BIOS to `/storage/roms/bios/`, or try the `desmume` core (HLE, no BIOS). |
+
+## 🧹 Uninstall
+```sh
+bash bin/panicos-emu-uninstall.sh            # restores stock /etc, removes the sandbox
+bash bin/panicos-emu-uninstall.sh --keep-roms # ...but keep your ROMs
+```
+Then restart EmulationStation. PanicOS / norns / USB / audio are untouched either way.
+
+## 📦 Repo layout
+```
+rocknix.lock                   pinned ROCKNIX version (auto-bumped by the Action)
+systems.conf                   declarative systems + cores
+config/retroarch.cfg           RetroArch config (sdl2 audio @48k, glcore video)
+config/retroarch.sh            sandbox launch wrapper (core selection + fallback + logging)
+bin/panicos-emu-install.sh     installer / updater (idempotent, self-healing, --all-cores)
+bin/panicos-emu-uninstall.sh   full revert
+ports/Update Emulators.sh      on-device menu entry (git pull + install)
+.github/workflows/sync-rocknix.yml   daily ROCKNIX tracker
+```
+
+## 🔬 Provenance & notes
+Grafted from `ROCKNIX-H700.aarch64` — the same Allwinner H700 SoC and Mesa/Panfrost + Vulkan + PipeWire stack as PanicOS, so RetroArch and cores are built for exactly this hardware. RetroArch runs as a Wayland client of `panicos-sway` (the `glcore` driver auto-selects the Wayland context) and as an SDL audio stream into `CDC PCM Codec-0` at 48 kHz to match the pinned codec rate.
+
+<div align="center">
+<sub>Not affiliated with ROCKNIX, PanicOS, or libretro. Bring your own legally-obtained ROMs and BIOS.</sub>
+</div>
