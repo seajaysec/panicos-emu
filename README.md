@@ -15,7 +15,7 @@ PanicOS is a deliberately lean, ROCKNIX-lineage appliance for the norns/PanicTra
 ## ✨ What you get
 
 - **13 console systems** out of the box — Game Boy/Color, NES, SNES, GBA, Genesis, Master System, Game Gear, ColecoVision, Neo Geo Pocket, PC Engine, WonderSwan, N64, Nintendo DS.
-- **Multiple cores per system**, pickable per-game in the EmulationStation UI (e.g. SNES → `snes9x` / `snes9x2010` / `beetle_supafaust`). First listed is the default.
+- **Multiple cores per system** — every listed core is installed (e.g. SNES → `snes9x` / `snes9x2010` / `beetle_supafaust`); the first is the default. Switch a system's default by reordering one line in `systems.conf` (no re-download — the cores are already there).
 - **ROCKNIX's device-tuned QOL, inherited** — its full base `retroarch.cfg`, **153 per-core option presets** (mupen64 `4:3`/dynamic-recompiler, melonDS layout/JIT, …), per-core `.opt` files, and **1,800+ slang shaders** (LCD/scanline/CRT filters for the 640×480 panel) — all layered *under* our PanicOS overrides so nothing regresses.
 - **Self-updating** — a GitHub Action tracks ROCKNIX daily; an on-device **Update Emulators** menu entry applies updates when *you* choose.
 - **Correct on this exact hardware** — Wayland/`glcore` video and SDL2→PipeWire audio routed exactly the way PanicOS routes everything else (no muted-sink surprises, no codec-rate crackle).
@@ -43,7 +43,7 @@ ROCKNIX release ──(daily GitHub Action, auto-commit)──▶ rocknix.lock o
                       └─ bin/panicos-emu-install.sh
                             ├─ fetch the ROCKNIX SYSTEM image for the locked version
                             ├─ extract RetroArch + every core in systems.conf (+ full lib closure)
-                            ├─ regenerate es_systems (superset of pristine /etc, with core selectors)
+                            ├─ regenerate es_systems (superset of pristine /etc, per-system core defaults)
                             └─ self-test · preserve saves/states/bios/roms
 ```
 
@@ -57,10 +57,11 @@ ROCKNIX release ──(daily GitHub Action, auto-commit)──▶ rocknix.lock o
 ```
 # name | fullname | cores (first = default) | extensions | platform
 snes | Super Nintendo | snes9x snes9x2010 beetle_supafaust | sfc smc | snes
-nds  | Nintendo DS    | melonds desmume melondsds          | nds     | nds
+nds  | Nintendo DS    | melonds melondsds desmume          | nds     | nds
 ```
-- **Add a system or an alternate core:** edit a line → commit → run **Update Emulators**. The installer fetches what's needed and regenerates everything. Cores ROCKNIX doesn't ship are skipped automatically (never fatal).
-- **Pick a core per game:** in EmulationStation, *Game Options → Core*. The wrapper validates the choice and falls back to the default if needed, so a game always launches.
+- **Add a system, or change a system's default core:** edit a line (first core = default) → commit → run **Update Emulators**. The installer fetches what's needed and regenerates everything. Cores ROCKNIX doesn't ship are skipped automatically (never fatal).
+- **Per-game core selection is not available** on this PanicOS EmulationStation build — it ships a stripped gamelist menu with no metadata editor, so cores are chosen **per-system** (the line above). All alternate cores are installed regardless, so changing a default is instant.
+- **Per-game tweaks that DO work:** in a running game, hotkey **+ X** → **Quick Menu** → set Shaders / Core Options / aspect, then **Overrides → Save Game Override** so they auto-load for that game next time.
 
 ### Full ROCKNIX parity
 Want *every* core ROCKNIX builds available, not just the ones in `systems.conf`?

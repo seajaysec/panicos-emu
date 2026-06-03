@@ -150,26 +150,10 @@ render_configs(){
   conf_rows | awk -F'|' '{gsub(/[[:space:]]/,"",$1); print $1}' | while read -r s; do
     [ -n "$s" ] && mkdir -p "$ROMS/$s"
   done
-  # es_features.cfg — unlocks the per-game/per-system Emulator+Core selector (PanicOS ships none)
-  if [ -f "$REPO_DIR/config/es_features.cfg" ]; then
-    local ESF="/etc/emulationstation/es_features.cfg"
-    if [ -f "$ESF" ] && ! grep -q 'panicos-emu' "$ESF" && [ ! -f "$ESF.panicos-orig" ]; then
-      cp -a "$ESF" "$ESF.panicos-orig"; log "backed up stock es_features -> $ESF.panicos-orig"
-    fi
-    install -m 0644 "$REPO_DIR/config/es_features.cfg" "$ESF"
-  fi
   # install/refresh the on-device "Update Emulators" Ports menu entry (kept in sync with the repo)
   if [ -f "$REPO_DIR/ports/Update Emulators.sh" ]; then
     mkdir -p "$ROMS/ports"
     install -m 0755 "$REPO_DIR/ports/Update Emulators.sh" "$ROMS/ports/Update Emulators.sh"
-  fi
-  # merge our tuned core-option overrides into the (ROCKNIX-provided) core options, idempotently:
-  # drop any existing line for a key we manage, then append ours (survives RA rewrites + re-runs)
-  local COREOPTS="$PREFIX/config/retroarch-core-options.cfg" APP="$REPO_DIR/config/core-options.append"
-  if [ -f "$APP" ] && [ -f "$COREOPTS" ]; then
-    awk -F' = ' 'NR==FNR{if($1 !~ /^#/ && $1!="")k[$1]=1;next} !($1 in k)' "$APP" "$COREOPTS" > "$COREOPTS.tmp" \
-      && cat "$APP" >> "$COREOPTS.tmp" && mv "$COREOPTS.tmp" "$COREOPTS"
-    log "core-option overrides merged ($(grep -cE '^[a-z].* = ' "$APP" 2>/dev/null || echo 0) keys)"
   fi
   log "configs rendered ($(grep -c '<name>' "$ES_TARGET") ES systems -> $ES_TARGET; menu entry refreshed)"
 }

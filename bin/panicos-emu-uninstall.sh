@@ -22,14 +22,6 @@ else
 fi
 rm -f  "/storage/roms/ports/Update Emulators.sh" "/storage/roms/ports/Update Emulators.log"
 
-echo "[emu] removing/restoring es_features.cfg…"
-ESF="/etc/emulationstation/es_features.cfg"
-if [ -f "$ESF.panicos-orig" ]; then
-  cp -a "$ESF.panicos-orig" "$ESF" && rm -f "$ESF.panicos-orig"
-elif grep -q 'panicos-emu' "$ESF" 2>/dev/null; then
-  rm -f "$ESF"
-fi
-
 if [ "$KEEP_ROMS" = 0 ]; then
   echo "[emu] removing console rom dirs (pass --keep-roms to keep them)…"
   for s in gb nes snes gba genesis mastersystem gamegear colecovision ngp pcengine wonderswan n64 bios; do
