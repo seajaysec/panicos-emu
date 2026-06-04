@@ -55,12 +55,14 @@ log(){  printf '%s[emu]%s %s\n' "$c_i" "$c_0" "$*"; }
 warn(){ printf '%s[emu] WARN:%s %s\n' "$c_w" "$c_0" "$*" >&2; }
 die(){  printf '%s[emu] ERROR:%s %s\n' "$c_e" "$c_0" "$*" >&2; exit 1; }
 
-FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0
+FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0; QUICK=0; NOGRAFT=0
 for a in "$@"; do case "$a" in
   --force) FORCE=1 ;;
   --all-cores) ALL_CORES=1 ;;
   --render-only|--repair) RENDER_ONLY=1 ;;
   --status) STATUS=1 ;;
+  --quick-setup) QUICK=1 ;;
+  --no-graft) NOGRAFT=1 ;;
   -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
   *) die "unknown arg: $a" ;;
 esac; done
@@ -280,6 +282,19 @@ graft(){
   log "graft complete (ROCKNIX $RKVER)"
 }
 
+# ---- populate the on-device selection file from recommended-systems.conf ----
+quick_setup(){
+  mkdir -p "$PREFIX"
+  local rec="$REPO_DIR/recommended-systems.conf"
+  if [ -f "$rec" ]; then
+    grep -vE '^\s*#|^\s*$' "$rec" > "$SELECTION"
+  else
+    # fallback: derive from systems.conf, excluding nds
+    conf_rows | awk -F'|' '{gsub(/ /,"",$1);print $1}' | grep -vx nds > "$SELECTION" || true
+  fi
+  log "quick setup: $(wc -l < "$SELECTION" | tr -d ' ') systems selected"
+}
+
 # ---------------------------------------------------------------------------
 main(){
   if [ "$STATUS" = 1 ]; then print_status; exit 0; fi
@@ -288,6 +303,9 @@ main(){
   if [ "$RENDER_ONLY" = 1 ]; then
     render_configs; log "render-only: done."; exit 0
   fi
+
+  if [ "$QUICK" = 1 ]; then quick_setup; fi
+  if [ "$NOGRAFT" = 1 ]; then log "--no-graft: skipping download and render."; return; fi
 
   # graft if forced, version changed, binary missing, or the set of wanted cores changed
   local cur=""; [ -f "$INSTALLED_MARK" ] && cur=$(cat "$INSTALLED_MARK")

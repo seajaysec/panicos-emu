@@ -17,4 +17,11 @@ teardown(){ rm -rf "$SBOX"; }
 setup
 t "status runs without error" "bash '$HERE/bin/panicos-emu-install.sh' --status >/dev/null 2>&1"
 teardown
+
+setup
+bash "$HERE/bin/panicos-emu-install.sh" --quick-setup --no-graft >/dev/null 2>&1
+t "quick-setup writes enabled-systems"   "[ -s '$PE_PREFIX/.enabled-systems' ]"
+t "quick-setup includes snes"            "grep -qx snes '$PE_PREFIX/.enabled-systems'"
+t "quick-setup excludes nds"             "! grep -qx nds '$PE_PREFIX/.enabled-systems'"
+teardown
 exit $FAIL
