@@ -88,16 +88,15 @@ static pid_t g_pid=-1; static int g_fd=-1,g_done=0,after_run=ST_HOME;
 /* progress bar pulled out of the engine's "<cur> / <total>" download line */
 static long g_cur=0,g_tot=0;
 static void scan_progress(void){
-    /* scan the visible terminal for a "<num> / <num>" pair (latest wins) */
+    /* wget --show-progress prints a "<NN>%" on the (latest, \r-updated) line; use that. */
     for(int r=TROWS-1;r>=0;r--){
-        char*p=strstr(term[r]," / ");
-        if(!p) continue;
-        long a=0,b=0; char*s=p;
-        while(s>term[r]&&(s[-1]>='0'&&s[-1]<='9')) s--;
-        if(s==p) continue;
-        a=strtol(s,NULL,10);
-        b=strtol(p+3,NULL,10);
-        if(b>0){ g_cur=a; g_tot=b; return; }
+        char*pct=NULL;
+        for(char*p=term[r];*p;p++) if(*p=='%') pct=p;   /* last % on the line */
+        if(!pct) continue;
+        char*s=pct; while(s>term[r] && s[-1]>='0' && s[-1]<='9') s--;
+        if(s==pct) continue;                            /* % with no leading digits */
+        long v=strtol(s,NULL,10);
+        if(v>=0 && v<=100){ g_cur=v; g_tot=100; return; }
     }
 }
 static void cmd_start(const char*cmd,int ret){

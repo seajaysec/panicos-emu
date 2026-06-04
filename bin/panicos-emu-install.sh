@@ -38,8 +38,9 @@ ROMS="${PE_ROMS:-/storage/roms}"
 ES_TARGET="${PE_ES_TARGET:-/etc/emulationstation/es_systems.cfg}"
 ES_ORIG="${PE_ES_ORIG:-${ES_TARGET}.panicos-orig}"
 ES_STALE="/storage/.emulationstation/es_systems.cfg"
-BUILD="/storage/.panicos-emu-build"
+BUILD="${PE_BUILD:-/storage/.panicos-emu-build}"
 MNT="$BUILD/mnt"
+CACHE="${PE_CACHE:-/storage/.panicos-emu-cache}"   # persistent ROCKNIX image cache (SYSTEM-<ver>)
 LD="/lib/ld-linux-aarch64.so.1"
 INSTALLED_MARK="$PREFIX/.installed-rocknix"
 CORES_MARK="$PREFIX/.installed-cores"
@@ -209,46 +210,97 @@ render_configs(){
   log "configs rendered ($(grep -c '<name>' "$ES_TARGET") ES systems -> $ES_TARGET; menu entry refreshed)"
 }
 
-# ---- resolve full shared-lib closure from a mounted ROCKNIX SYSTEM ---------
-resolve_libs(){  # $1=stage dir  $2=mounted rocknix root
-  local stage="$1" mnt="$2" changed=1 i=0 miss so src
-  export LD_LIBRARY_PATH="$stage/lib:/usr/lib:/lib"
+# ---- cores listed for one system in systems.conf (space-separated) ---------
+cores_of_system(){  # $1=system name
+  conf_rows | awk -F'|' -v s="$1" '{n=$1;gsub(/[ \t]/,"",n); if(n==s){gsub(/^[ \t]+|[ \t]+$/,"",$3);print $3}}'
+}
+
+# ---- mount the ROCKNIX SYSTEM image (from cache, or download+cache once) ----
+mount_system(){
+  mountpoint -q "$MNT" && return 0
+  mkdir -p "$MNT" "$CACHE"
+  local sys="$CACHE/SYSTEM-$RKVER"
+  if [ ! -f "$sys" ]; then
+    log "fetching ROCKNIX $RKVER image (cached for future installs)…"
+    mkdir -p "$BUILD"
+    ( cd "$BUILD"
+      wget -c -q --show-progress -O rocknix.tar "$URL" || die "download failed: $URL"
+      log "extracting SYSTEM…"
+      rm -f SYSTEM; tar xf rocknix.tar "$RKDIR/$MEMBER"; mv "$RKDIR/$MEMBER" SYSTEM; rm -rf "$RKDIR" )
+    rm -f "$CACHE"/SYSTEM-*            # drop any stale-version cache
+    mv "$BUILD/SYSTEM" "$sys"
+    rm -rf "$BUILD"
+  else
+    log "using cached ROCKNIX $RKVER image"
+  fi
+  mount -o loop,ro "$sys" "$MNT" || die "mount SYSTEM failed (kernel needs LZO squashfs)"
+}
+unmount_system(){ mountpoint -q "$MNT" && umount -l "$MNT" 2>/dev/null || true; }
+
+# ---- resolve full shared-lib closure into a lib dir from a mounted SYSTEM ---
+resolve_into(){  # $1=libdir  $2=retroarch bin  $3=cores dir  $4=mounted rocknix root
+  local libdir="$1" bin="$2" coresdir="$3" mnt="$4" changed=1 i=0 miss so src
+  mkdir -p "$libdir"
+  export LD_LIBRARY_PATH="$libdir:/usr/lib:/lib"
   while [ "$changed" = 1 ] && [ "$i" -lt 25 ]; do
     changed=0; i=$((i+1))
-    miss=$( { LD_TRACE_LOADED_OBJECTS=1 "$LD" "$stage/bin/retroarch"
-              for c in "$stage"/cores/*_libretro.so; do LD_TRACE_LOADED_OBJECTS=1 "$LD" "$c"; done
+    miss=$( { LD_TRACE_LOADED_OBJECTS=1 "$LD" "$bin"
+              for c in "$coresdir"/*_libretro.so; do LD_TRACE_LOADED_OBJECTS=1 "$LD" "$c"; done
             } 2>&1 | awk '/not found/{print $1}' | sort -u )
     for so in $miss; do
       src=$(find "$mnt/usr/lib" -maxdepth 1 -name "$so" 2>/dev/null | head -1)
       [ -z "$src" ] && src=$(find "$mnt/usr/lib" -name "$so*" 2>/dev/null | head -1)
-      if [ -n "$src" ]; then cp -Lf "$src" "$stage/lib/$so"; changed=1
+      if [ -n "$src" ]; then cp -Lf "$src" "$libdir/$so"; changed=1
       else warn "$so referenced but not found in ROCKNIX $RKVER"; fi
     done
   done
-  log "lib closure resolved ($(ls "$stage/lib" | wc -l | tr -d ' ') libs)"
+  log "lib closure: $(ls "$libdir" 2>/dev/null | wc -l | tr -d ' ') libs"
 }
 
-# ---- graft binaries from ROCKNIX (download + mount + extract) --------------
-graft(){
-  log "grafting ROCKNIX $RKVER ($ASSET)$([ "$ALL_CORES" = 1 ] && echo ' [all-cores]')"
-  mkdir -p "$BUILD" "$MNT"
-  ( cd "$BUILD"
-    log "downloading (resumable)…"
-    wget -c -q --show-progress -O rocknix.tar "$URL" || die "download failed: $URL"
-    log "extracting SYSTEM…"
-    rm -f SYSTEM
-    tar xf rocknix.tar "$RKDIR/$MEMBER"
-    mv "$RKDIR/$MEMBER" SYSTEM
-    rm -rf "$RKDIR"
-  )
-  mountpoint -q "$MNT" && umount -l "$MNT" || true
-  mount -o loop,ro "$BUILD/SYSTEM" "$MNT" || die "mount SYSTEM failed (kernel needs LZO squashfs)"
+# ---- ROCKNIX QOL (base cfg + core-option presets + shaders) ----------------
+copy_qol(){  # $1=1 force refresh, else only-if-missing ; $MNT must be mounted
+  mkdir -p "$PREFIX/config" "$PREFIX/shaders"
+  if [ "${1:-0}" = 1 ] || [ ! -f "$PREFIX/config/rocknix-base.cfg" ]; then
+    cp -f "$MNT/usr/config/retroarch/retroarch.cfg" "$PREFIX/config/rocknix-base.cfg" 2>/dev/null && log "  QOL: base config"
+    cp -f "$MNT/usr/config/retroarch/retroarch-core-options.cfg" "$PREFIX/config/" 2>/dev/null && log "  QOL: core options"
+    cp -f "$MNT/usr/config/retroarch/"*.opt "$PREFIX/config/" 2>/dev/null || true
+  fi
+  if [ -z "$(ls -A "$PREFIX/shaders" 2>/dev/null)" ] && [ -d "$MNT/usr/share/slang-shaders" ]; then
+    cp -a "$MNT/usr/share/slang-shaders/." "$PREFIX/shaders/" 2>/dev/null && log "  QOL: shaders"
+  fi
+}
 
+# ---- scoped install: add ONE system's cores, leave everything else intact ---
+graft_scoped(){  # SCOPE set; $MNT mounted
+  log "installing $SCOPE …"
+  mkdir -p "$PREFIX/cores" "$PREFIX/lib" "$PREFIX/bin" "$PREFIX/autoconfig"
+  [ -x "$PREFIX/bin/retroarch" ] || cp -a "$MNT/usr/bin/retroarch" "$PREFIX/bin/retroarch"
+  [ -n "$(ls -A "$PREFIX/autoconfig" 2>/dev/null)" ] || cp -a "$MNT/usr/share/libretro/autoconfig/." "$PREFIX/autoconfig/" 2>/dev/null || true
+  copy_qol 0
+  local c got=0
+  for c in $(cores_of_system "$SCOPE"); do
+    if [ -f "$MNT/usr/lib/libretro/${c}_libretro.so" ]; then
+      cp -f "$MNT/usr/lib/libretro/${c}_libretro.so" "$PREFIX/cores/"
+      cp -f "$MNT/usr/lib/libretro/${c}_libretro.info" "$PREFIX/cores/" 2>/dev/null || true
+      log "  core: $c"; got=$((got+1))
+    else warn "core '$c' not in ROCKNIX $RKVER — skipping"; fi
+  done
+  [ "$got" -gt 0 ] || warn "no installable cores for $SCOPE"
+  resolve_into "$PREFIX/lib" "$PREFIX/bin/retroarch" "$PREFIX/cores" "$MNT"
+  echo "$RKVER" > "$INSTALLED_MARK"; want_key > "$CORES_MARK"
+  unmount_system
+  log "installed $SCOPE"
+}
+
+# ---- graft binaries from ROCKNIX (scoped to one system, or full rebuild) ----
+graft(){
+  mount_system
+  if [ -n "${SCOPE:-}" ]; then graft_scoped; return; fi
+  log "grafting ROCKNIX $RKVER (full)$([ "$ALL_CORES" = 1 ] && echo ' [all-cores]')"
   local STAGE="$BUILD/stage"
   rm -rf "$STAGE"; mkdir -p "$STAGE"/{bin,lib,cores,autoconfig}
   cp -a "$MNT/usr/bin/retroarch" "$STAGE/bin/retroarch"
   cp -a "$MNT/usr/share/libretro/autoconfig/." "$STAGE/autoconfig/" 2>/dev/null || true
-
   if [ "$ALL_CORES" = 1 ]; then
     log "copying ALL ROCKNIX cores (parity)…"
     cp -f "$MNT/usr/lib/libretro/"*_libretro.so   "$STAGE/cores/" 2>/dev/null || true
@@ -266,34 +318,33 @@ graft(){
     done
   fi
   log "  cores staged: $(ls "$STAGE/cores/"*_libretro.so 2>/dev/null | wc -l | tr -d ' ')"
-  resolve_libs "$STAGE" "$MNT"
-
+  resolve_into "$STAGE/lib" "$STAGE/bin/retroarch" "$STAGE/cores" "$MNT"
   mkdir -p "$PREFIX"
   rm -rf "$PREFIX/bin" "$PREFIX/lib" "$PREFIX/cores" "$PREFIX/autoconfig"
   mv "$STAGE/bin" "$STAGE/lib" "$STAGE/cores" "$STAGE/autoconfig" "$PREFIX/"
   echo "$RKVER"   > "$INSTALLED_MARK"
   want_key        > "$CORES_MARK"
-
-  # ---- ROCKNIX QOL: device-tuned base config + per-core option presets + shaders ----
-  # (layered under our PanicOS override at launch; gives optimized per-emulator defaults)
-  mkdir -p "$PREFIX/config" "$PREFIX/shaders"
-  cp -f "$MNT/usr/config/retroarch/retroarch.cfg" "$PREFIX/config/rocknix-base.cfg" 2>/dev/null \
-    && log "  QOL: ROCKNIX base config"
-  cp -f "$MNT/usr/config/retroarch/retroarch-core-options.cfg" "$PREFIX/config/" 2>/dev/null \
-    && log "  QOL: core-option presets ($(grep -c '=' "$PREFIX/config/retroarch-core-options.cfg" 2>/dev/null || echo 0) options)"
-  cp -f "$MNT/usr/config/retroarch/"*.opt "$PREFIX/config/" 2>/dev/null || true
-  if [ -d "$MNT/usr/share/slang-shaders" ]; then
-    cp -a "$MNT/usr/share/slang-shaders/." "$PREFIX/shaders/" 2>/dev/null \
-      && log "  QOL: slang shaders ($(du -sh "$PREFIX/shaders" 2>/dev/null | cut -f1))"
-  fi
-
-  umount -l "$MNT" 2>/dev/null || true
-  rm -rf "$BUILD"
+  copy_qol 1
+  rm -rf "$STAGE"
+  unmount_system
   log "graft complete (ROCKNIX $RKVER)"
 }
 
 # ---- add a system to the on-device selection file (idempotent) -------------
-enable_system(){ mkdir -p "$PREFIX"; touch "$SELECTION"; grep -qxF "$1" "$SELECTION" || echo "$1" >> "$SELECTION"; }
+enable_system(){
+  mkdir -p "$PREFIX"
+  if [ ! -f "$SELECTION" ]; then
+    # materialize current reality (systems that already have an installed core) so adding
+    # one system does NOT silently narrow the selection to just that one.
+    conf_rows | while IFS='|' read -r n full corelist rest; do
+      n=$(echo "$n" | xargs)
+      for c in $corelist; do
+        if [ -f "$PREFIX/cores/${c}_libretro.so" ]; then echo "$n"; break; fi
+      done
+    done > "$SELECTION"
+  fi
+  grep -qxF "$1" "$SELECTION" || echo "$1" >> "$SELECTION"
+}
 
 # ---- remove a system from the on-device selection file (keeps ROMs) ---------
 disable_system(){ [ -f "$SELECTION" ] || return 0; { grep -vxF "$1" "$SELECTION" || true; } > "$SELECTION.tmp"; mv "$SELECTION.tmp" "$SELECTION"; }
@@ -331,25 +382,29 @@ main(){
   fi
 
   if [ "$QUICK" = 1 ]; then quick_setup; fi
+  SCOPE=""
   case "$ACTION" in
-    install) [ -n "$ARG1" ] || die "--install needs a system name"; enable_system "$ARG1" ;;
-    remove)  [ -n "$ARG1" ] || die "--remove needs a system name";  disable_system "$ARG1" ;;
+    install) [ -n "$ARG1" ] || die "--install needs a system name"; enable_system "$ARG1"; SCOPE="$ARG1" ;;
+    remove)  [ -n "$ARG1" ] || die "--remove needs a system name";  disable_system "$ARG1"; want_key > "$CORES_MARK"; render_configs; log "removed $ARG1"; exit 0 ;;
     setcore) [ -n "$ARG1" ] && [ -n "$ARG2" ] || die "--set-core needs <system> <core>";
              set_core "$ARG1" "$ARG2"; render_configs; log "default core for $ARG1 -> $ARG2"; exit 0 ;;
   esac
   if [ "$NOGRAFT" = 1 ]; then log "--no-graft: skipping download and render."; return; fi
 
-  # graft if forced, version changed, binary missing, or the set of wanted cores changed
-  local cur=""; [ -f "$INSTALLED_MARK" ] && cur=$(cat "$INSTALLED_MARK")
-  local have=""; [ -f "$CORES_MARK" ] && have=$(cat "$CORES_MARK")
-  local need=0
-  [ "$FORCE" = 1 ] && need=1
-  [ "$cur" != "$RKVER" ] && need=1
-  [ -x "$PREFIX/bin/retroarch" ] || need=1
-  [ "$(want_key)" != "$have" ] && need=1
-  [ -f "$PREFIX/config/rocknix-base.cfg" ] || need=1   # ROCKNIX QOL not pulled yet
-
-  if [ "$need" = 1 ]; then graft; else log "ROCKNIX $RKVER + configured cores already present."; fi
+  if [ -n "$SCOPE" ]; then
+    graft        # scoped: install just SCOPE's cores; leaves all other systems intact
+  else
+    # full-graft decision: forced, version changed, binary missing, wanted core set changed, or QOL absent
+    local cur=""; [ -f "$INSTALLED_MARK" ] && cur=$(cat "$INSTALLED_MARK")
+    local have=""; [ -f "$CORES_MARK" ] && have=$(cat "$CORES_MARK")
+    local need=0
+    [ "$FORCE" = 1 ] && need=1
+    [ "$cur" != "$RKVER" ] && need=1
+    [ -x "$PREFIX/bin/retroarch" ] || need=1
+    [ "$(want_key)" != "$have" ] && need=1
+    [ -f "$PREFIX/config/rocknix-base.cfg" ] || need=1
+    if [ "$need" = 1 ]; then graft; else log "ROCKNIX $RKVER + configured cores already present."; fi
+  fi
   render_configs   # AFTER graft, so es_systems reflects what's actually installed
 
   # self-test: binary + every installed core resolve cleanly
