@@ -56,6 +56,7 @@ warn(){ printf '%s[emu] WARN:%s %s\n' "$c_w" "$c_0" "$*" >&2; }
 die(){  printf '%s[emu] ERROR:%s %s\n' "$c_e" "$c_0" "$*" >&2; exit 1; }
 
 FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0; QUICK=0; NOGRAFT=0
+ACTION=""; ARG1=""; ARG2=""
 for a in "$@"; do case "$a" in
   --force) FORCE=1 ;;
   --all-cores) ALL_CORES=1 ;;
@@ -63,8 +64,12 @@ for a in "$@"; do case "$a" in
   --status) STATUS=1 ;;
   --quick-setup) QUICK=1 ;;
   --no-graft) NOGRAFT=1 ;;
+  --install) ACTION=install ;;
+  --remove) ACTION=remove ;;
+  --set-core) ACTION=setcore ;;
   -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
-  *) die "unknown arg: $a" ;;
+  --*) die "unknown arg: $a" ;;
+  *) if [ -z "$ARG1" ]; then ARG1="$a"; elif [ -z "$ARG2" ]; then ARG2="$a"; else die "unexpected arg: $a"; fi ;;
 esac; done
 
 if [ -z "${PE_PREFIX:-}" ]; then [ "$(id -u)" = 0 ] || die "must run as root"; fi
@@ -282,6 +287,9 @@ graft(){
   log "graft complete (ROCKNIX $RKVER)"
 }
 
+# ---- add a system to the on-device selection file (idempotent) -------------
+enable_system(){ mkdir -p "$PREFIX"; touch "$SELECTION"; grep -qxF "$1" "$SELECTION" || echo "$1" >> "$SELECTION"; }
+
 # ---- populate the on-device selection file from recommended-systems.conf ----
 quick_setup(){
   mkdir -p "$PREFIX"
@@ -305,6 +313,9 @@ main(){
   fi
 
   if [ "$QUICK" = 1 ]; then quick_setup; fi
+  case "$ACTION" in
+    install) [ -n "$ARG1" ] || die "--install needs a system name"; enable_system "$ARG1" ;;
+  esac
   if [ "$NOGRAFT" = 1 ]; then log "--no-graft: skipping download and render."; return; fi
 
   # graft if forced, version changed, binary missing, or the set of wanted cores changed

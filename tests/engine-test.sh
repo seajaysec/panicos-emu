@@ -24,4 +24,11 @@ t "quick-setup writes enabled-systems"   "[ -s '$PE_PREFIX/.enabled-systems' ]"
 t "quick-setup includes snes"            "grep -qx snes '$PE_PREFIX/.enabled-systems'"
 t "quick-setup excludes nds"             "! grep -qx nds '$PE_PREFIX/.enabled-systems'"
 teardown
+
+setup
+bash "$HERE/bin/panicos-emu-install.sh" --install snes --no-graft >/dev/null 2>&1
+t "install adds system"      "grep -qx snes '$PE_PREFIX/.enabled-systems'"
+bash "$HERE/bin/panicos-emu-install.sh" --install snes --no-graft >/dev/null 2>&1
+t "install is idempotent"    "[ \"\$(grep -cx snes '$PE_PREFIX/.enabled-systems')\" = 1 ]"
+teardown
 exit $FAIL
