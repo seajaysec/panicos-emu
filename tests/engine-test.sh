@@ -49,4 +49,13 @@ t "set-core records override" "grep -q 'snes|snes9x2010' '$PE_PREFIX/.core-overr
 t "es_systems uses override"  "grep -q 'retroarch.sh %CORE% snes9x2010' '$PE_ES_TARGET'"
 teardown
 
+setup
+echo "20260101" > "$PE_PREFIX/.installed-rocknix"
+out="$(bash "$HERE/bin/panicos-emu-install.sh" --check-update 2>/dev/null)"
+t "check-update reports available" "echo \"\$out\" | grep -q '^update:'"
+echo "$(jq -r .rocknix_version "$HERE/rocknix.lock")" > "$PE_PREFIX/.installed-rocknix"
+out2="$(bash "$HERE/bin/panicos-emu-install.sh" --check-update 2>/dev/null)"
+t "check-update reports current"   "echo \"\$out2\" | grep -q '^uptodate:'"
+teardown
+
 exit $FAIL

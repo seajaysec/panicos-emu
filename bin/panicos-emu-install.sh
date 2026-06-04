@@ -56,7 +56,7 @@ log(){  printf '%s[emu]%s %s\n' "$c_i" "$c_0" "$*"; }
 warn(){ printf '%s[emu] WARN:%s %s\n' "$c_w" "$c_0" "$*" >&2; }
 die(){  printf '%s[emu] ERROR:%s %s\n' "$c_e" "$c_0" "$*" >&2; exit 1; }
 
-FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0; QUICK=0; NOGRAFT=0
+FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0; QUICK=0; NOGRAFT=0; CHECK=0; UPDATE=0
 ACTION=""; ARG1=""; ARG2=""
 for a in "$@"; do case "$a" in
   --force) FORCE=1 ;;
@@ -65,6 +65,8 @@ for a in "$@"; do case "$a" in
   --status) STATUS=1 ;;
   --quick-setup) QUICK=1 ;;
   --no-graft) NOGRAFT=1 ;;
+  --check-update) CHECK=1 ;;
+  --update) UPDATE=1 ;;
   --install) ACTION=install ;;
   --remove) ACTION=remove ;;
   --set-core) ACTION=setcore ;;
@@ -316,6 +318,12 @@ quick_setup(){
 # ---------------------------------------------------------------------------
 main(){
   if [ "$STATUS" = 1 ]; then print_status; exit 0; fi
+  if [ "$CHECK" = 1 ]; then
+    cur="$(cat "$INSTALLED_MARK" 2>/dev/null || echo none)"
+    [ "$cur" = "$RKVER" ] && echo "uptodate:$RKVER" || echo "update:$cur->$RKVER"
+    exit 0
+  fi
+  [ "$UPDATE" = 1 ] && FORCE=1
   log "panicos-emu — target ROCKNIX $RKVER ($TARGET/$ARCH)"
 
   if [ "$RENDER_ONLY" = 1 ]; then
