@@ -1,0 +1,21 @@
+{
+    "version": 4,
+    "name": "panicos-emu.zip",
+    "items": [ "Update Emulators.sh", "panicos-emu/" ],
+    "items_opt": null,
+    "attr": {
+        "title": "panicos-emu - Emulator Manager",
+        "porter": [ "seajaysec" ],
+        "desc": "Installs and maintains console emulation (RetroArch + ROCKNIX cores) on PanicOS. Launch it, pick your systems and cores, then copy ROMs into /storage/roms/<system>/.",
+        "desc_md": null,
+        "inst": "Run 'Update Emulators' from Ports. First launch downloads everything (needs Wi-Fi).",
+        "inst_md": null,
+        "genres": [ "utility" ],
+        "image": { "screenshot": null, "covers": [], "thumbnail": null, "video": null },
+        "rtr": true,
+        "exp": false,
+        "runtime": [],
+        "store": [],
+        "availability": "full"
+    }
+}
