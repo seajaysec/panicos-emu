@@ -36,5 +36,5 @@ jobs:
               apt-get update -qq && apt-get install -y -qq gcc libsdl2-dev pkg-config
               gcc -O2 -Wall src/emu-manager.c -o /tmp/emu-manager \
                   $(pkg-config --cflags --libs sdl2) -lm
-              file /tmp/emu-manager
-            '
+              test -x /tmp/emu-manager && echo "compiled OK"
+            '   # note: debian-slim has no `file`; run that on the host if needed
