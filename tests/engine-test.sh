@@ -31,4 +31,12 @@ t "install adds system"      "grep -qx snes '$PE_PREFIX/.enabled-systems'"
 bash "$HERE/bin/panicos-emu-install.sh" --install snes --no-graft >/dev/null 2>&1
 t "install is idempotent"    "[ \"\$(grep -cx snes '$PE_PREFIX/.enabled-systems')\" = 1 ]"
 teardown
+setup
+printf 'snes\nnes\n' > "$PE_PREFIX/.enabled-systems"
+mkdir -p "$PE_ROMS/snes"; echo dummy > "$PE_ROMS/snes/game.sfc"
+bash "$HERE/bin/panicos-emu-install.sh" --remove snes --no-graft >/dev/null 2>&1
+t "remove drops system"  "! grep -qx snes '$PE_PREFIX/.enabled-systems'"
+t "remove keeps other"   "grep -qx nes '$PE_PREFIX/.enabled-systems'"
+t "remove keeps ROMs"    "[ -f '$PE_ROMS/snes/game.sfc' ]"
+teardown
 exit $FAIL

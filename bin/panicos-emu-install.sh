@@ -290,6 +290,9 @@ graft(){
 # ---- add a system to the on-device selection file (idempotent) -------------
 enable_system(){ mkdir -p "$PREFIX"; touch "$SELECTION"; grep -qxF "$1" "$SELECTION" || echo "$1" >> "$SELECTION"; }
 
+# ---- remove a system from the on-device selection file (keeps ROMs) ---------
+disable_system(){ [ -f "$SELECTION" ] || return 0; { grep -vxF "$1" "$SELECTION" || true; } > "$SELECTION.tmp"; mv "$SELECTION.tmp" "$SELECTION"; }
+
 # ---- populate the on-device selection file from recommended-systems.conf ----
 quick_setup(){
   mkdir -p "$PREFIX"
@@ -315,6 +318,7 @@ main(){
   if [ "$QUICK" = 1 ]; then quick_setup; fi
   case "$ACTION" in
     install) [ -n "$ARG1" ] || die "--install needs a system name"; enable_system "$ARG1" ;;
+    remove)  [ -n "$ARG1" ] || die "--remove needs a system name";  disable_system "$ARG1" ;;
   esac
   if [ "$NOGRAFT" = 1 ]; then log "--no-graft: skipping download and render."; return; fi
 
