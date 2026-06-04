@@ -39,4 +39,14 @@ t "remove drops system"  "! grep -qx snes '$PE_PREFIX/.enabled-systems'"
 t "remove keeps other"   "grep -qx nes '$PE_PREFIX/.enabled-systems'"
 t "remove keeps ROMs"    "[ -f '$PE_ROMS/snes/game.sfc' ]"
 teardown
+
+setup
+printf 'snes\n' > "$PE_PREFIX/.enabled-systems"
+: > "$PE_PREFIX/cores/snes9x_libretro.so"
+: > "$PE_PREFIX/cores/snes9x2010_libretro.so"
+bash "$HERE/bin/panicos-emu-install.sh" --set-core snes snes9x2010 --no-graft >/dev/null 2>&1
+t "set-core records override" "grep -q 'snes|snes9x2010' '$PE_PREFIX/.core-overrides'"
+t "es_systems uses override"  "grep -q 'retroarch.sh %CORE% snes9x2010' '$PE_ES_TARGET'"
+teardown
+
 exit $FAIL

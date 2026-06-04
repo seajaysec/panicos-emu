@@ -44,6 +44,7 @@ LD="/lib/ld-linux-aarch64.so.1"
 INSTALLED_MARK="$PREFIX/.installed-rocknix"
 CORES_MARK="$PREFIX/.installed-cores"
 SELECTION="$PREFIX/.enabled-systems"   # optional: newline list of enabled system names; absent = all
+OVERRIDES="$PREFIX/.core-overrides"   # lines: system|core (default-core override)
 
 # Color only on an interactive terminal (so piped/GUI output is clean, no stray escapes).
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -148,6 +149,8 @@ gen_es_systems(){
     for c in $corelist; do [ -f "$PREFIX/cores/${c}_libretro.so" ] && installed+=("$c"); done
     [ "${#installed[@]}" -eq 0 ] && { warn "system '$name': none of its cores are installed — skipping"; continue; }
     local def="${installed[0]}"
+    local ov; ov="$(override_core "$name")"
+    [ -n "$ov" ] && [ -f "$PREFIX/cores/${ov}_libretro.so" ] && def="$ov"
     local extattr="" e
     for e in $exts; do extattr="$extattr .$e .$(echo "$e" | tr '[:lower:]' '[:upper:]')"; done
     extattr="$extattr .zip .ZIP"
@@ -293,6 +296,10 @@ enable_system(){ mkdir -p "$PREFIX"; touch "$SELECTION"; grep -qxF "$1" "$SELECT
 # ---- remove a system from the on-device selection file (keeps ROMs) ---------
 disable_system(){ [ -f "$SELECTION" ] || return 0; { grep -vxF "$1" "$SELECTION" || true; } > "$SELECTION.tmp"; mv "$SELECTION.tmp" "$SELECTION"; }
 
+# ---- set/query a persistent default-core override for a system ---------------
+set_core(){ mkdir -p "$PREFIX"; touch "$OVERRIDES"; { grep -vE "^$1\\|" "$OVERRIDES" || true; } > "$OVERRIDES.tmp"; echo "$1|$2" >> "$OVERRIDES.tmp"; mv "$OVERRIDES.tmp" "$OVERRIDES"; }
+override_core(){ [ -f "$OVERRIDES" ] || return 0; awk -F'|' -v s="$1" '$1==s{print $2}' "$OVERRIDES" | head -1; }
+
 # ---- populate the on-device selection file from recommended-systems.conf ----
 quick_setup(){
   mkdir -p "$PREFIX"
@@ -319,6 +326,8 @@ main(){
   case "$ACTION" in
     install) [ -n "$ARG1" ] || die "--install needs a system name"; enable_system "$ARG1" ;;
     remove)  [ -n "$ARG1" ] || die "--remove needs a system name";  disable_system "$ARG1" ;;
+    setcore) [ -n "$ARG1" ] && [ -n "$ARG2" ] || die "--set-core needs <system> <core>";
+             set_core "$ARG1" "$ARG2"; render_configs; log "default core for $ARG1 -> $ARG2"; exit 0 ;;
   esac
   if [ "$NOGRAFT" = 1 ]; then log "--no-graft: skipping download and render."; return; fi
 
