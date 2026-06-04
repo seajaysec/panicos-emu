@@ -233,6 +233,7 @@ mount_system(){
   else
     log "using cached ROCKNIX $RKVER image"
   fi
+  mkdir -p "$MNT"   # BUILD (which contains MNT) may have just been removed after caching
   mount -o loop,ro "$sys" "$MNT" || die "mount SYSTEM failed (kernel needs LZO squashfs)"
 }
 unmount_system(){ mountpoint -q "$MNT" && umount -l "$MNT" 2>/dev/null || true; }
