@@ -5,3 +5,4 @@
 *.img.gz
 SYSTEM
 .DS_Store
+.superpowers/
