@@ -6,6 +6,9 @@
 
 *Anbernic RG35XX Pro / Allwinner H700 · RetroArch + libretro · self-updating*
 
+[![ci](https://github.com/seajaysec/panicos-emu/actions/workflows/ci.yml/badge.svg)](https://github.com/seajaysec/panicos-emu/actions/workflows/ci.yml)
+[![release](https://github.com/seajaysec/panicos-emu/actions/workflows/release.yml/badge.svg)](https://github.com/seajaysec/panicos-emu/releases/latest)
+
 </div>
 
 ---
@@ -14,8 +17,8 @@ PanicOS is a deliberately lean, ROCKNIX-lineage appliance for the norns/PanicTra
 
 ## ✨ What you get
 
-- **13 console systems** out of the box — Game Boy/Color, NES, SNES, GBA, Genesis, Master System, Game Gear, ColecoVision, Neo Geo Pocket, PC Engine, WonderSwan, N64, Nintendo DS.
-- **Multiple cores per system** — every listed core is installed (e.g. SNES → `snes9x` / `snes9x2010` / `beetle_supafaust`); the first is the default. Switch a system's default by reordering one line in `systems.conf` (no re-download — the cores are already there).
+- **13 console systems** available — Game Boy/Color, NES, SNES, GBA, Genesis, Master System, Game Gear, ColecoVision, Neo Geo Pocket, PC Engine, WonderSwan, N64, Nintendo DS.
+- **Per-core control, on the device** — each system lists several cores (e.g. SNES → `snes9x` / `snes9x2010` / `beetle_supafaust`). In the manager you install exactly the cores you want, set the per-system **default**, **update**, or **remove** them individually — no SSH, no config editing. Installs are **scoped** (touching one system never re-downloads the rest) and the **1.5 GB ROCKNIX image is cached**, so per-core operations are quick.
 - **ROCKNIX's device-tuned QOL, inherited** — its full base `retroarch.cfg`, **153 per-core option presets** (mupen64 `4:3`/dynamic-recompiler, melonDS layout/JIT, …), per-core `.opt` files, and **1,800+ slang shaders** (LCD/scanline/CRT filters for the 640×480 panel) — all layered *under* our PanicOS overrides so nothing regresses.
 - **Self-updating** — a GitHub Action tracks ROCKNIX daily; an on-device **Update Emulators** menu entry applies updates when *you* choose.
 - **Correct on this exact hardware** — Wayland/`glcore` video and SDL2→PipeWire audio routed exactly the way PanicOS routes everything else (no muted-sink surprises, no codec-rate crackle).
@@ -41,15 +44,15 @@ ROCKNIX release ──(daily GitHub Action, auto-commit)──▶ rocknix.lock o
                       │
                       ├─ git pull this repo (public HTTPS)
                       └─ bin/panicos-emu-install.sh
-                            ├─ fetch the ROCKNIX SYSTEM image for the locked version
-                            ├─ extract RetroArch + every core in systems.conf (+ full lib closure)
+                            ├─ fetch the ROCKNIX SYSTEM image for the locked version (cached after first time)
+                            ├─ extract RetroArch + your installed cores (+ full lib closure)
                             ├─ regenerate es_systems (superset of pristine /etc, per-system core defaults)
-                            └─ self-test · preserve saves/states/bios/roms
+                            └─ self-test · preserve saves/states/bios/roms · keep your per-core choices
 ```
 
 - **ROCKNIX updates** — the Action bumps `rocknix.lock`; the device applies it next time you run the menu entry. Nothing is ever applied unattended.
 - **PanicOS updates** — handled by PanicOS; our `/storage` layer survives, and the next run rebuilds the `/etc` override from the new pristine stock.
-- **Binaries are never committed** — always fetched fresh from ROCKNIX, so the repo stays tiny and current.
+- **RetroArch & cores are never committed** — always fetched fresh from ROCKNIX, so the repo stays current. (The only binary in the repo is the small `bin/emu-manager` GUI, prebuilt for aarch64 because the device has no toolchain.)
 
 ## ⚙️ Configuration
 
@@ -59,8 +62,9 @@ ROCKNIX release ──(daily GitHub Action, auto-commit)──▶ rocknix.lock o
 snes | Super Nintendo | snes9x snes9x2010 beetle_supafaust | sfc smc | snes
 nds  | Nintendo DS    | melonds melondsds desmume          | nds     | nds
 ```
-- **Add a system, or change a system's default core:** edit a line (first core = default) → commit → run **Update Emulators**. The installer fetches what's needed and regenerates everything. Cores ROCKNIX doesn't ship are skipped automatically (never fatal).
-- **Per-game core selection is not available** on this PanicOS EmulationStation build — it ships a stripped gamelist menu with no metadata editor, so cores are chosen **per-system** (the line above). All alternate cores are installed regardless, so changing a default is instant.
+- **`systems.conf` is the catalog**; what's actually installed is your choice, made on the device. Open a system in the manager to install/remove individual cores and pick the default. Cores ROCKNIX doesn't ship are skipped automatically (never fatal).
+- **Add a whole new system or candidate core:** edit a line in `systems.conf` → commit → it appears in the manager's Library to install. (The first core listed is the suggested default.)
+- **Per-game core selection is not available** on this PanicOS EmulationStation build — it ships a stripped gamelist menu with no metadata editor, so cores are chosen **per-system** (in the manager). Switching the default is instant if that core is installed.
 - **Per-game tweaks that DO work:** in a running game, hotkey **+ X** → **Quick Menu** → set Shaders / Core Options / aspect, then **Overrides → Save Game Override** so they auto-load for that game next time.
 
 ### Full ROCKNIX parity
@@ -92,15 +96,22 @@ Either way: **restart EmulationStation** (Quit) or reboot to see the systems, th
 
 ## 🕹️ On-device manager (the "Update Emulators" entry)
 
-A fullscreen, gamepad-driven SDL2 app. From the main menu:
-- **Manage emulators** — a per-system list showing **installed / partial / missing** cores and rom
-  counts (green / yellow / red). Toggle the systems you want (**A**), or **Y** = all, **X** = all
-  missing; **Start** applies — it fetches just the chosen targets and regenerates EmulationStation.
-- **Update** — sync with ROCKNIX and re-apply your selection.
-- **Install ALL cores** — full ROCKNIX parity.
-- **Uninstall (keep ROMs)**.
+A fullscreen, gamepad-driven SDL2 app — no SSH, no config files. Screens:
 
-Live progress streams on-screen. **D-pad** moves · **A** selects · **B/Select** back/quit.
+- **Quick Setup** — one tap to install the recommended set. A **Cores** toggle chooses *Default core
+  only* (one emulator per system — lean) or *All per system*. DS is excluded (too heavy on the H700).
+- **Library** — every system with an honest state badge (**GET** / **ON** / **UPD**), its installed
+  core count, and your ROM count. Filter by All / Installed / Get / Updates.
+- **Per-system core screen** (press **A** on a system):
+  - *Not installed yet* → a **checkbox list** of its emulators (default pre-checked) → **Install selected**.
+  - *Already installed* → each emulator shows its state (**★** default · **＋** installed · **－** missing);
+    press **A** on one for **Install / Make default / Update / Remove**, plus **Remove entire system**.
+- **Update** — pull the latest ROCKNIX and refresh your installed cores (your per-core choices survive).
+- **Settings** — install **all** cores (parity), see the BIOS folder, force a config re-render.
+
+Live progress (download %, then per-core copy) streams on-screen. **D-pad** moves · **A** select/confirm ·
+**B/Select** back/cancel · **X** cycles Library filters. Everything is **scoped and cached**, so
+reinstalling one core touches only that core and won't re-download the 1.5 GB image.
 
 <details><summary>Private fork? (deploy-key setup)</summary>
 
@@ -141,14 +152,24 @@ Then restart EmulationStation. PanicOS / norns / USB / audio are untouched eithe
 ## 📦 Repo layout
 ```
 rocknix.lock                   pinned ROCKNIX version (auto-bumped by the Action)
-systems.conf                   declarative systems + cores
+systems.conf                   declarative catalog: systems + candidate cores
+recommended-systems.conf       the Quick Setup set (everything but DS)
 config/retroarch.cfg           PanicOS override layer (sdl2 audio @48k, glcore, sandbox paths)
                                -> applied via --appendconfig over ROCKNIX's pulled base config
 config/retroarch.sh            sandbox launch wrapper (config layering + core selection + logging)
-bin/panicos-emu-install.sh     installer / updater (idempotent, self-healing, --all-cores)
+bin/panicos-emu-install.sh     the engine: install/update/remove, per-core, scoped, cached, self-healing
 bin/panicos-emu-uninstall.sh   full revert
-ports/Update Emulators.sh      on-device menu entry (git pull + install)
-.github/workflows/sync-rocknix.yml   daily ROCKNIX tracker
+bin/emu-manager                prebuilt aarch64 SDL2 GUI (the on-device manager)
+src/emu-manager.c              GUI source
+tests/engine-test.sh           engine verb-logic tests (sandboxed, no device/root/network)
+ports/Update Emulators.sh      on-device menu entry (self-bootstrap + exec the GUI)
+ports/port.json                PortMaster bundle metadata
+bootstrap.sh                   one-liner installer (curl | bash)
+scripts/build-emu-manager.sh   cross-compile the GUI (Docker, aarch64)
+scripts/build-port-zip.sh      assemble dist/panicos-emu.zip (PortMaster autoinstall)
+.github/workflows/ci.yml             tests + aarch64 build check on every push
+.github/workflows/release.yml        build the release bundle on a v* tag
+.github/workflows/sync-rocknix.yml   daily ROCKNIX tracker (auto-bumps rocknix.lock)
 ```
 
 ## 🔬 Provenance & notes

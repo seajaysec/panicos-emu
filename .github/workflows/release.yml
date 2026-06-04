@@ -1,0 +1,67 @@
+name: release
+
+# Cut a release by pushing a tag:  git tag v1.0.0 && git push origin v1.0.0
+# Produces, on the GitHub Release:
+#   - panicos-emu.zip   (PortMaster autoinstall bundle -> drop in /storage/roms/ports/autoinstall/)
+#   - emu-manager       (prebuilt aarch64 GUI binary, standalone)
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch: {}        # allow manual runs (uses the latest tag, or 'untagged')
+
+permissions:
+  contents: write              # needed to create the Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq zip
+
+      - name: Engine self-tests
+        run: bash tests/engine-test.sh
+
+      - name: Set up QEMU (for aarch64 cross-build)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build aarch64 GUI binary
+        run: |
+          docker run --rm --platform linux/arm64 -v "$PWD:/build" -w /build \
+            debian:bookworm-slim sh -c '
+              apt-get update -qq && apt-get install -y -qq gcc libsdl2-dev pkg-config
+              gcc -O2 -Wall src/emu-manager.c -o bin/emu-manager \
+                  $(pkg-config --cflags --libs sdl2) -lm
+            '
+          file bin/emu-manager | grep -q aarch64 || { echo "binary is not aarch64"; exit 1; }
+
+      - name: Build PortMaster bundle
+        run: bash scripts/build-port-zip.sh
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/panicos-emu.zip
+            bin/emu-manager
+          body: |
+            ## panicos-emu ${{ github.ref_name }}
+
+            Console emulation for PanicOS, grafted from ROCKNIX — see the
+            [README](https://github.com/seajaysec/panicos-emu#-install) for full instructions.
+
+            ### Install
+            **PortMaster (no computer):** download `panicos-emu.zip`, copy it to
+            `/storage/roms/ports/autoinstall/`, launch PortMaster, then run **Update Emulators** from Ports.
+
+            **One-liner (SSH):**
+            ```sh
+            curl -fsSL https://raw.githubusercontent.com/seajaysec/panicos-emu/master/bootstrap.sh | bash
+            ```
+
+            `emu-manager` is the standalone aarch64 GUI binary (the PortMaster bundle and the installer
+            fetch it automatically; you only need it for manual setups).
