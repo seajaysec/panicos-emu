@@ -27,16 +27,16 @@
 ###############################################################################
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_DIR="${PE_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 LOCK="$REPO_DIR/rocknix.lock"
 SYSTEMS_CONF="$REPO_DIR/systems.conf"
 TPL_CFG="$REPO_DIR/config/retroarch.cfg"
 TPL_WRAP="$REPO_DIR/config/retroarch.sh"
 
-PREFIX="/storage/emulators/retroarch"
-ROMS="/storage/roms"
-ES_TARGET="/etc/emulationstation/es_systems.cfg"
-ES_ORIG="/etc/emulationstation/es_systems.cfg.panicos-orig"
+PREFIX="${PE_PREFIX:-/storage/emulators/retroarch}"
+ROMS="${PE_ROMS:-/storage/roms}"
+ES_TARGET="${PE_ES_TARGET:-/etc/emulationstation/es_systems.cfg}"
+ES_ORIG="${PE_ES_ORIG:-${ES_TARGET}.panicos-orig}"
 ES_STALE="/storage/.emulationstation/es_systems.cfg"
 BUILD="/storage/.panicos-emu-build"
 MNT="$BUILD/mnt"
@@ -65,7 +65,7 @@ for a in "$@"; do case "$a" in
   *) die "unknown arg: $a" ;;
 esac; done
 
-[ "$(id -u)" = 0 ] || die "must run as root"
+if [ -z "${PE_PREFIX:-}" ]; then [ "$(id -u)" = 0 ] || die "must run as root"; fi
 command -v jq >/dev/null   || die "jq required"
 [ -f "$LOCK" ]             || die "missing rocknix.lock (run from the repo clone)"
 [ -f "$SYSTEMS_CONF" ]     || die "missing systems.conf"
