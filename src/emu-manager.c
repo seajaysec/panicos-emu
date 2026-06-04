@@ -37,7 +37,7 @@
 
 enum { BTN_B=0, BTN_A=1, BTN_Y=2, BTN_X=3, BTN_SELECT=8, BTN_START=9,
        BTN_UP=13, BTN_DOWN=14, BTN_LEFT=15, BTN_RIGHT=16 };
-enum { ST_HOME, ST_LIBRARY, ST_SHEET, ST_CONFIRM, ST_QSETUP, ST_PROGRESS, ST_SETTINGS, ST_HELP };
+enum { ST_HOME, ST_LIBRARY, ST_CORES, ST_SHEET, ST_CONFIRM, ST_QSETUP, ST_PROGRESS, ST_SETTINGS, ST_HELP };
 
 static SDL_Renderer *REN;
 static SDL_Texture  *FONT;
@@ -163,29 +163,41 @@ static void inventory_reload(void){
     for(int i=0;i<NSYS;i++) SYS[i].update = (g_update && SYS[i].enabled && SYS[i].inst>0);
 }
 
-/* ---------- installed-core discovery (for Change core sublist) ---------- *
- * The engine's systems.conf lists candidate cores per system (space-separated,
- * first is default). We read it and keep the ones whose <core>_libretro.so exists. */
-static char CORE_LIST[12][24]; static int NCORES=0;
-static void cores_for(const char*sysname){
-    NCORES=0;
+/* ---------- per-system core list (ALL candidates + per-core state) ---------- *
+ * systems.conf lists candidate cores per system (space-separated, first is the
+ * default). We load every candidate and mark which are installed and which is the
+ * active default (override-aware, from --status). This drives the per-system core
+ * screen: checkbox-install for fresh systems, per-core manage for installed ones. */
+typedef struct { char name[24]; int installed; int isdef; } core_t;
+static core_t CORES[12]; static int NCORE=0;
+static int core_pick[12];     /* checkbox state (pick mode) */
+static int core_sel=0;        /* cursor in the core list */
+static int cur_core=0;        /* core chosen for the per-core action sheet */
+/* load CORES[] for SYS[sysidx]; pre-check the default in pick mode. */
+static void corelist_load(int sysidx){
+    NCORE=0; core_sel=0;
+    const char*sysname=SYS[sysidx].name;
+    const char*def=SYS[sysidx].def;   /* installed default (override-aware) or "" */
     FILE*f=fopen(CLONE "/systems.conf","r"); if(!f) return;
     char line[512];
     while(fgets(line,sizeof line,f)){
         if(line[0]=='#'||line[0]=='\n') continue;
-        /* fields: name | full | cores | exts | platform */
         char*fl[5]; int nf=0; fl[nf++]=line;
         for(char*p=line;*p&&nf<5;p++) if(*p=='|'){*p=0; fl[nf++]=p+1;}
         if(nf<3) continue;
         char nm[32]; snprintf(nm,sizeof nm,"%s",fl[0]);
-        /* trim spaces around name */
         char*a=nm; while(*a==' ')a++; char*z=a+strlen(a); while(z>a&&(z[-1]==' '||z[-1]=='\t'))*--z=0;
         if(strcmp(a,sysname)!=0) continue;
-        /* tokenize core list */
         char*tok=strtok(fl[2]," \t");
-        while(tok && NCORES<12){
+        while(tok && NCORE<12){
+            core_t*c=&CORES[NCORE];
+            snprintf(c->name,sizeof c->name,"%s",tok);
             char path[256]; snprintf(path,sizeof path,"%s/%s_libretro.so",CORES_DIR,tok);
-            if(access(path,F_OK)==0) snprintf(CORE_LIST[NCORES++],24,"%s",tok);
+            c->installed=(access(path,F_OK)==0);
+            c->isdef=(def[0] && strcmp(tok,def)==0);
+            /* pick-mode default check: the first candidate (systems.conf default) */
+            core_pick[NCORE]=(NCORE==0)?1:0;
+            NCORE++;
             tok=strtok(NULL," \t");
         }
         break;
@@ -198,19 +210,21 @@ static int screen=ST_HOME;
 static int hsel=0;                 /* Home tile cursor */
 static int lib_filter=0;           /* 0 All 1 Installed 2 Get 3 Updates */
 static int lib_top=0, lib_sel=0;   /* Library scroll/cursor (index into NSYS) */
-static int cur_sys=0;              /* system selected for the action sheet */
+static int cur_sys=0;              /* system entered for the core screen */
+static int cores_pickmode=0;       /* 1 = checkbox-install (fresh system); 0 = manage */
 
-/* action sheet */
+/* per-core action sheet */
 #define MAXSHEET 6
 static char SHEET[MAXSHEET][16]; static int NSHEET=0, ssel=0;
-static int sheet_change_core=0;    /* 1 = currently showing the Change-core sublist */
-static int csel=0;                 /* cursor in core sublist */
 
 /* confirm */
 static char cf_title[64], cf_body[160], cf_cmd[256];
 
 /* settings */
 static int set_sel=0;
+
+/* quick setup */
+static int qs_allcores=0;          /* 0 = default core per system, 1 = all cores */
 
 /* ---------- Home ---------- */
 static const char *HOME[]={ "Quick Setup", "Library", "Update", "Settings", "Help / ROMs" };
@@ -246,68 +260,74 @@ static void lib_clamp(void){
     if(lib_top<0) lib_top=0;
 }
 
-/* ---------- action sheet builder ---------- */
-static void sheet_build(int sysidx){
-    cur_sys=sysidx; NSHEET=0; ssel=0; sheet_change_core=0;
-    int st=row_state(&SYS[sysidx]);
-    if(st==0){ /* GET */
-        snprintf(SHEET[NSHEET++],16,"Install");
-        snprintf(SHEET[NSHEET++],16,"Change core");
-        snprintf(SHEET[NSHEET++],16,"Cancel");
-    } else if(st==2){ /* UPD */
-        snprintf(SHEET[NSHEET++],16,"Update");
-        snprintf(SHEET[NSHEET++],16,"Change core");
-        snprintf(SHEET[NSHEET++],16,"Remove");
-        snprintf(SHEET[NSHEET++],16,"Cancel");
-    } else { /* ON */
-        snprintf(SHEET[NSHEET++],16,"Change core");
-        snprintf(SHEET[NSHEET++],16,"Remove");
-        snprintf(SHEET[NSHEET++],16,"Reinstall");
-        snprintf(SHEET[NSHEET++],16,"Cancel");
-    }
+/* ---------- enter the per-system core screen ---------- */
+static void cores_enter(int sysidx){
+    cur_sys=sysidx;
+    corelist_load(sysidx);
+    cores_pickmode=(SYS[sysidx].inst==0);   /* fresh system -> checkbox install */
+    core_sel=0;
+    screen=ST_CORES;
+}
+/* pick mode: rows are NCORE cores + 1 "Install selected"; manage: NCORE + "Remove system" */
+static int cores_rowcount(void){ return NCORE+1; }
+
+/* pick mode commit: install exactly the checked cores */
+static void cores_install_selected(void){
+    char cmd[512]; int n=snprintf(cmd,sizeof cmd,SYNC "--install %s",SYS[cur_sys].name);
+    int any=0;
+    for(int i=0;i<NCORE && n<(int)sizeof cmd-32;i++)
+        if(core_pick[i]){ n+=snprintf(cmd+n,sizeof cmd-n," %s",CORES[i].name); any=1; }
+    if(!any){ screen=ST_LIBRARY; return; }   /* nothing checked -> no-op */
+    cmd_start(cmd,ST_LIBRARY); screen=ST_PROGRESS;
 }
 
-/* ---------- enter confirmations ---------- */
-static void confirm_remove(void){
+/* ---------- per-core action sheet (manage mode) ---------- */
+static void sheet_build_core(int coreidx){
+    cur_core=coreidx; NSHEET=0; ssel=0;
+    core_t*c=&CORES[coreidx];
+    if(!c->installed){
+        snprintf(SHEET[NSHEET++],16,"Install");
+    } else {
+        if(!c->isdef) snprintf(SHEET[NSHEET++],16,"Make default");
+        if(g_update)  snprintf(SHEET[NSHEET++],16,"Update");
+        snprintf(SHEET[NSHEET++],16,"Remove");
+    }
+    snprintf(SHEET[NSHEET++],16,"Cancel");
+    screen=ST_SHEET;
+}
+static void confirm_remove_core(void){
+    sysrow_t*s=&SYS[cur_sys]; core_t*c=&CORES[cur_core];
+    snprintf(cf_title,sizeof cf_title,"Remove %s?",c->name);
+    snprintf(cf_body,sizeof cf_body,"Removes this %s core. Keeps your %d ROMs.",s->full,s->roms);
+    snprintf(cf_cmd,sizeof cf_cmd,SYNC "--remove-core %s %s",s->name,c->name);
+    screen=ST_CONFIRM;
+}
+static void confirm_remove_system(void){
     sysrow_t*s=&SYS[cur_sys];
-    snprintf(cf_title,sizeof cf_title,"Remove %s?",s->full);
-    snprintf(cf_body,sizeof cf_body,"Removes the core. Keeps your %d ROMs.",s->roms);
+    snprintf(cf_title,sizeof cf_title,"Remove all of %s?",s->full);
+    snprintf(cf_body,sizeof cf_body,"Removes every core for this system. Keeps your %d ROMs.",s->roms);
     snprintf(cf_cmd,sizeof cf_cmd,SYNC "--remove %s",s->name);
     screen=ST_CONFIRM;
 }
-static void confirm_reinstall(void){
-    sysrow_t*s=&SYS[cur_sys];
-    snprintf(cf_title,sizeof cf_title,"Reinstall %s?",s->full);
-    snprintf(cf_body,sizeof cf_body,"Already installed & up to date. Re-download anyway?");
-    snprintf(cf_cmd,sizeof cf_cmd,SYNC "--install %s --force",s->name);
-    screen=ST_CONFIRM;
-}
-
-/* ---------- act on a sheet selection ---------- */
+/* act on a per-core sheet selection */
 static void sheet_act(void){
-    sysrow_t*s=&SYS[cur_sys];
+    sysrow_t*s=&SYS[cur_sys]; core_t*c=&CORES[cur_core];
     const char*a=SHEET[ssel];
     char cmd[256];
-    if(!strcmp(a,"Cancel")){ screen=ST_LIBRARY; return; }
-    if(!strcmp(a,"Change core")){
-        cores_for(s->name);
-        sheet_change_core=1; csel=0; return;
-    }
+    if(!strcmp(a,"Cancel")){ screen=ST_CORES; return; }
     if(!strcmp(a,"Install")){
-        snprintf(cmd,sizeof cmd,SYNC "--install %s",s->name);
+        snprintf(cmd,sizeof cmd,SYNC "--install %s %s",s->name,c->name);
         cmd_start(cmd,ST_LIBRARY); screen=ST_PROGRESS; return;
     }
-    if(!strcmp(a,"Update")){
-        cmd_start(SYNC "--update",ST_LIBRARY); screen=ST_PROGRESS; return;
+    if(!strcmp(a,"Make default")){
+        snprintf(cmd,sizeof cmd,SYNC "--set-core %s %s",s->name,c->name);
+        cmd_start(cmd,ST_LIBRARY); screen=ST_PROGRESS; return;
     }
-    if(!strcmp(a,"Remove")){ confirm_remove(); return; }
-    if(!strcmp(a,"Reinstall")){ confirm_reinstall(); return; }
-}
-static void core_act(void){
-    if(NCORES==0){ sheet_change_core=0; return; }
-    char cmd[256];
-    snprintf(cmd,sizeof cmd,SYNC "--set-core %s %s",SYS[cur_sys].name,CORE_LIST[csel]);
-    cmd_start(cmd,ST_LIBRARY); screen=ST_PROGRESS;
+    if(!strcmp(a,"Update")){   /* re-pull just this core from the newer ROCKNIX image */
+        snprintf(cmd,sizeof cmd,SYNC "--install %s %s --force",s->name,c->name);
+        cmd_start(cmd,ST_LIBRARY); screen=ST_PROGRESS; return;
+    }
+    if(!strcmp(a,"Remove")){ confirm_remove_core(); return; }
 }
 
 /* ===================================================================== */
@@ -366,45 +386,69 @@ static void render_library(void){
             if(s->roms>0) snprintf(info,sizeof info,"not installed - you have %d games",s->roms);
             else          snprintf(info,sizeof info,"not installed");
         } else {
-            snprintf(info,sizeof info,"core: %s   %d games",s->def[0]?s->def:"-",s->roms);
+            snprintf(info,sizeof info,"%d/%d cores   core: %s   %d games",
+                     s->inst,s->total,s->def[0]?s->def:"-",s->roms);
         }
         draw_text(74,y+18,1,info,150,155,170);
     }
-    draw_text(12,SCREEN_H-24,1,"D-PAD: MOVE  A: ACTIONS  X: FILTER  B: BACK",110,110,135);
+    draw_text(12,SCREEN_H-24,1,"D-PAD: MOVE  A: OPEN  X: FILTER  B: BACK",110,110,135);
 }
 
-static void render_sheet(void){
-    /* dim background by re-rendering library first, then overlay panel */
-    render_library();
-    int pw=360, ph=NSHEET*40+70, px=(SCREEN_W-pw)/2, py=(SCREEN_H-ph)/2;
+/* ---------- per-system core screen ---------- */
+static void render_cores(void){
     sysrow_t*s=&SYS[cur_sys];
-    if(!sheet_change_core){
-        fill(px,py,pw,ph,22,26,40);
-        fill(px,py,pw,4,80,140,200);
-        draw_text_c(SCREEN_W/2,py+14,2,s->full,110,200,255);
-        for(int i=0;i<NSHEET;i++){ int y=py+50+i*40;
-            int danger=(!strcmp(SHEET[i],"Remove"));
-            if(i==ssel) fill(px+12,y-6,pw-24,34,36,78,140);
-            draw_text(px+28,y,2,SHEET[i],danger?230:230,danger?120:230,danger?120:235);
+    draw_text(14,10,2,s->full,110,200,255);
+    draw_text(14,38,1, cores_pickmode ? "Choose cores to install:" : "Manage cores:",170,175,190);
+
+    int rows=cores_rowcount();
+    for(int r=0;r<rows;r++){
+        int y=66+r*38;
+        int sel=(r==core_sel);
+        if(sel) fill(8,y-6,SCREEN_W-16,34,30,40,70);
+        if(r<NCORE){
+            core_t*c=&CORES[r];
+            if(cores_pickmode){
+                /* checkbox + name */
+                draw_text(20,y,2, core_pick[r]?"[x]":"[ ]", core_pick[r]?90:120, core_pick[r]?200:120, core_pick[r]?120:130);
+                draw_text(74,y,2,c->name,225,225,232);
+                if(r==0) draw_text(74,y+18,1,"default",140,150,170);
+            } else {
+                /* state glyph + name + tag */
+                const char*g; Uint8 gr,gg,gb;
+                if(c->isdef){ g="*"; gr=235;gg=205;gb=90; }
+                else if(c->installed){ g="+"; gr=90;gg=190;gb=110; }   /* installed */
+                else { g="-"; gr=110;gg=110;gb=125; }                  /* not installed */
+                draw_text(24,y,2,g,gr,gg,gb);
+                draw_text(74,y,2,c->name,225,225,232);
+                const char*tag = c->isdef?"installed - default" : c->installed?"installed" : "not installed";
+                draw_text(74,y+18,1,tag, c->installed?150:120, c->installed?160:120, 175);
+            }
+        } else {
+            /* trailing action row */
+            if(cores_pickmode) draw_text(20,y,2,"Install selected",120,200,140);
+            else               draw_text(20,y,2,"Remove entire system",230,120,120);
         }
-        draw_text_c(SCREEN_W/2,py+ph-18,1,"A: SELECT   B: BACK",150,150,165);
-    } else {
-        /* Change-core sublist */
-        int cph=(NCORES>0?NCORES:1)*32+74;
-        int cpx=(SCREEN_W-pw)/2, cpy=(SCREEN_H-cph)/2;
-        fill(cpx,cpy,pw,cph,22,26,40);
-        fill(cpx,cpy,pw,4,80,140,200);
-        draw_text_c(SCREEN_W/2,cpy+14,2,"Change core",110,200,255);
-        if(NCORES==0){
-            draw_text_c(SCREEN_W/2,cpy+50,1,"No installed cores for this system.",200,160,160);
-        } else for(int i=0;i<NCORES;i++){ int y=cpy+48+i*32;
-            if(i==csel) fill(cpx+12,y-5,pw-24,28,36,78,140);
-            int isdef=(strcmp(CORE_LIST[i],s->def)==0);
-            char lbl[40]; snprintf(lbl,sizeof lbl,"%s%s",CORE_LIST[i],isdef?"  (current)":"");
-            draw_text(cpx+28,y,2,lbl,225,225,232);
-        }
-        draw_text_c(SCREEN_W/2,cpy+cph-18,1,"A: SET   B: BACK",150,150,165);
     }
+    if(cores_pickmode)
+        draw_text(12,SCREEN_H-24,1,"D-PAD: MOVE  A: TOGGLE / COMMIT  B: BACK",110,110,135);
+    else
+        draw_text(12,SCREEN_H-24,1,"D-PAD: MOVE  A: ACTIONS  B: BACK",110,110,135);
+}
+
+/* ---------- per-core action sheet (manage mode) ---------- */
+static void render_sheet(void){
+    render_cores();   /* dim background */
+    int pw=360, ph=NSHEET*40+78, px=(SCREEN_W-pw)/2, py=(SCREEN_H-ph)/2;
+    core_t*c=&CORES[cur_core];
+    fill(px,py,pw,ph,22,26,40);
+    fill(px,py,pw,4,80,140,200);
+    draw_text_c(SCREEN_W/2,py+14,2,c->name,110,200,255);
+    for(int i=0;i<NSHEET;i++){ int y=py+52+i*40;
+        int danger=(!strcmp(SHEET[i],"Remove"));
+        if(i==ssel) fill(px+12,y-6,pw-24,34,36,78,140);
+        draw_text(px+28,y,2,SHEET[i],230,danger?120:230,danger?120:235);
+    }
+    draw_text_c(SCREEN_W/2,py+ph-18,1,"A: SELECT   B: BACK",150,150,165);
 }
 
 static void render_confirm(void){
@@ -431,16 +475,24 @@ static const char *QS_CHIPS=
     "Game Boy/Color  NES  SNES  GBA  Genesis  Master System\n"
     "Game Gear  ColecoVision  Neo Geo Pocket  PC Engine\n"
     "WonderSwan  N64 (some games heavy)";
+#define NQS 4   /* 0 toggle, 1 Install, 2 Customize, 3 Cancel */
 static void render_qsetup(void){
-    draw_text(28,22,3,"Quick Setup",110,200,255);
-    draw_text(30,72,1,"Installs the recommended emulator set:",180,185,200);
-    draw_text(36,96,1,QS_CHIPS,200,205,215);
-    draw_text(30,160,1,"Nintendo DS is excluded (too slow on this handheld).",170,150,150);
-    draw_text(30,182,1,"~1.5 GB download - a few minutes - needs Wi-Fi.",200,200,150);
+    draw_text(28,20,3,"Quick Setup",110,200,255);
+    draw_text(30,66,1,"Installs the recommended emulator set:",180,185,200);
+    draw_text(36,88,1,QS_CHIPS,200,205,215);
+    draw_text(30,148,1,"Nintendo DS is excluded (too slow on this handheld).",170,150,150);
+    draw_text(30,168,1,"~1.5 GB download - a few minutes - needs Wi-Fi.",200,200,150);
+
+    /* row 0: cores toggle */
+    int y0=206;
+    if(hsel==0) fill(24,y0-8,SCREEN_W-48,42,36,78,140);
+    char tog[64]; snprintf(tog,sizeof tog,"Cores: %s", qs_allcores?"All per system":"Default core only");
+    draw_text(44,y0,2,tog,210,215,160);
+    draw_text(44,y0+22,1, qs_allcores?"every emulator each system lists" : "one emulator per system (add more later)",150,155,170);
 
     static const char*acts[]={ "Install", "Customize in Library", "Cancel" };
-    for(int i=0;i<3;i++){ int y=240+i*52;
-        if(i==hsel) fill(24,y-8,SCREEN_W-48,42,36,78,140);
+    for(int i=0;i<3;i++){ int y=262+i*52;
+        if(hsel==i+1) fill(24,y-8,SCREEN_W-48,42,36,78,140);
         draw_text(44,y,2,acts[i],230,230,235);
     }
     draw_text(28,SCREEN_H-24,1,"A: SELECT   B: BACK",110,110,135);
@@ -518,36 +570,47 @@ static void on_library(int up,int down,int acc,int bk,int xbtn){
     if(xbtn) { lib_filter=(lib_filter+1)%4; lib_sel=lib_top=0; lib_clamp(); }
     if(bk)   { screen=ST_HOME; return; }
     if(acc && lib_count()>0){
-        int i=lib_index(lib_sel); if(i>=0){ sheet_build(i); screen=ST_SHEET; }
+        int i=lib_index(lib_sel); if(i>=0) cores_enter(i);
+    }
+}
+static void on_cores(int up,int down,int acc,int bk){
+    int rows=cores_rowcount();
+    if(up)   core_sel=(core_sel-1+rows)%rows;
+    if(down) core_sel=(core_sel+1)%rows;
+    if(bk)   { screen=ST_LIBRARY; return; }
+    if(acc){
+        if(core_sel<NCORE){
+            if(cores_pickmode) core_pick[core_sel]=!core_pick[core_sel];   /* toggle checkbox */
+            else               sheet_build_core(core_sel);                /* open per-core sheet */
+        } else {
+            /* trailing action row */
+            if(cores_pickmode) cores_install_selected();
+            else               confirm_remove_system();
+        }
     }
 }
 static void on_sheet(int up,int down,int acc,int bk){
-    if(!sheet_change_core){
-        if(up)   ssel=(ssel-1+NSHEET)%NSHEET;
-        if(down) ssel=(ssel+1)%NSHEET;
-        if(bk)   { screen=ST_LIBRARY; return; }
-        if(acc)  sheet_act();
-    } else {
-        int n=NCORES>0?NCORES:1;
-        if(up)   csel=(csel-1+n)%n;
-        if(down) csel=(csel+1)%n;
-        if(bk)   { sheet_change_core=0; return; }   /* back to the sheet */
-        if(acc)  core_act();
-    }
+    if(up)   ssel=(ssel-1+NSHEET)%NSHEET;
+    if(down) ssel=(ssel+1)%NSHEET;
+    if(bk)   { screen=ST_CORES; return; }
+    if(acc)  sheet_act();
 }
 static void on_confirm(int acc,int bk){
     if(acc){ cmd_start(cf_cmd,ST_LIBRARY); screen=ST_PROGRESS; return; }
-    if(bk){ screen=ST_SHEET; return; }
+    if(bk){ screen=ST_CORES; return; }   /* both per-core and system remove came via the core screen */
 }
 static void on_qsetup(int up,int down,int acc,int bk){
-    if(up)   hsel=(hsel-1+3)%3;
-    if(down) hsel=(hsel+1)%3;
+    if(up)   hsel=(hsel-1+NQS)%NQS;
+    if(down) hsel=(hsel+1)%NQS;
     if(bk){ screen=ST_HOME; return; }
     if(acc){
         switch(hsel){
-            case 0: cmd_start(SYNC "--quick-setup",ST_HOME); screen=ST_PROGRESS; break;
-            case 1: lib_filter=0; lib_sel=lib_top=0; inventory_reload(); lib_clamp(); screen=ST_LIBRARY; break;
-            case 2: screen=ST_HOME; break;
+            case 0: qs_allcores=!qs_allcores; break;   /* toggle cores choice */
+            case 1: cmd_start(qs_allcores ? SYNC "--quick-setup"
+                                          : SYNC "--quick-setup --defaults", ST_HOME);
+                    screen=ST_PROGRESS; break;
+            case 2: lib_filter=0; lib_sel=lib_top=0; inventory_reload(); lib_clamp(); screen=ST_LIBRARY; break;
+            case 3: screen=ST_HOME; break;
         }
     }
 }
@@ -607,6 +670,7 @@ int main(void){
             switch(screen){
                 case ST_HOME:     on_home(up,down,acc,bk,&running); break;
                 case ST_LIBRARY:  on_library(up,down,acc,bk,xbtn); break;
+                case ST_CORES:    on_cores(up,down,acc,bk); break;
                 case ST_SHEET:    on_sheet(up,down,acc,bk); break;
                 case ST_CONFIRM:  on_confirm(acc,bk); break;
                 case ST_QSETUP:   on_qsetup(up,down,acc,bk); break;
@@ -621,6 +685,7 @@ int main(void){
         switch(screen){
             case ST_HOME:     render_home(); break;
             case ST_LIBRARY:  render_library(); break;
+            case ST_CORES:    render_cores(); break;
             case ST_SHEET:    render_sheet(); break;
             case ST_CONFIRM:  render_confirm(); break;
             case ST_QSETUP:   render_qsetup(); break;

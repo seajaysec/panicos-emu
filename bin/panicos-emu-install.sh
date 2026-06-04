@@ -57,11 +57,12 @@ log(){  printf '%s[emu]%s %s\n' "$c_i" "$c_0" "$*"; }
 warn(){ printf '%s[emu] WARN:%s %s\n' "$c_w" "$c_0" "$*" >&2; }
 die(){  printf '%s[emu] ERROR:%s %s\n' "$c_e" "$c_0" "$*" >&2; exit 1; }
 
-FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0; QUICK=0; NOGRAFT=0; CHECK=0; UPDATE=0
-ACTION=""; ARG1=""; ARG2=""
+FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0; QUICK=0; NOGRAFT=0; CHECK=0; UPDATE=0; DEFAULTS_ONLY=0
+ACTION=""; ARG1=""; ARG2=""; CORES_FILTER=""
 for a in "$@"; do case "$a" in
   --force) FORCE=1 ;;
   --all-cores) ALL_CORES=1 ;;
+  --defaults) DEFAULTS_ONLY=1 ;;
   --render-only|--repair) RENDER_ONLY=1 ;;
   --status) STATUS=1 ;;
   --quick-setup) QUICK=1 ;;
@@ -70,10 +71,15 @@ for a in "$@"; do case "$a" in
   --update) UPDATE=1 ;;
   --install) ACTION=install ;;
   --remove) ACTION=remove ;;
+  --remove-core) ACTION=removecore ;;
   --set-core) ACTION=setcore ;;
   -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
   --*) die "unknown arg: $a" ;;
-  *) if [ -z "$ARG1" ]; then ARG1="$a"; elif [ -z "$ARG2" ]; then ARG2="$a"; else die "unexpected arg: $a"; fi ;;
+  # positionals: ARG1=system; further positionals = an explicit core list (for --install)
+  #              and ARG2 = the core (for --set-core / --remove-core)
+  *) if [ -z "$ARG1" ]; then ARG1="$a"
+     else [ -z "$ARG2" ] && ARG2="$a"
+          CORES_FILTER="${CORES_FILTER:+$CORES_FILTER }$a"; fi ;;
 esac; done
 
 if [ -z "${PE_PREFIX:-}" ]; then [ "$(id -u)" = 0 ] || die "must run as root"; fi
@@ -102,12 +108,24 @@ conf_rows_enabled(){
     conf_rows
   fi
 }
-# every distinct core referenced by the ENABLED systems (field 3 may list several)
+# every distinct core referenced by the ENABLED systems (field 3 may list several).
+# With DEFAULTS_ONLY=1, only the FIRST (default) core of each enabled system.
 cores_needed(){
-  conf_rows_enabled | awk -F'|' '{
-    gsub(/^[ \t]+|[ \t]+$/,"",$3); n=split($3,a,/[ \t]+/);
-    for(i=1;i<=n;i++) if(a[i]!="") print a[i]
-  }' | sort -u
+  if [ "$DEFAULTS_ONLY" = 1 ]; then
+    conf_rows_enabled | awk -F'|' '{
+      gsub(/^[ \t]+|[ \t]+$/,"",$3); n=split($3,a,/[ \t]+/);
+      for(i=1;i<=n;i++) if(a[i]!=""){ print a[i]; break }
+    }' | sort -u
+  else
+    conf_rows_enabled | awk -F'|' '{
+      gsub(/^[ \t]+|[ \t]+$/,"",$3); n=split($3,a,/[ \t]+/);
+      for(i=1;i<=n;i++) if(a[i]!="") print a[i]
+    }' | sort -u
+  fi
+}
+# basenames of cores actually present on disk (the live installed set)
+installed_core_basenames(){
+  ls "$PREFIX/cores/"*_libretro.so 2>/dev/null | sed 's,.*/,,; s,_libretro\.so$,,' | sort -u
 }
 # what this run wants, as a stable key (enabled cores + all-cores flag) for change detection
 want_key(){ echo "$(cores_needed | tr '\n' ' ')|all=$ALL_CORES"; }
@@ -278,8 +296,12 @@ graft_scoped(){  # SCOPE set; $MNT mounted
   [ -x "$PREFIX/bin/retroarch" ] || cp -a "$MNT/usr/bin/retroarch" "$PREFIX/bin/retroarch"
   [ -n "$(ls -A "$PREFIX/autoconfig" 2>/dev/null)" ] || cp -a "$MNT/usr/share/libretro/autoconfig/." "$PREFIX/autoconfig/" 2>/dev/null || true
   copy_qol 0
+  # which cores: an explicit CORES_FILTER (subset), else ALL of the system's candidates.
+  local candidates; candidates="$(cores_of_system "$SCOPE")"
+  local want="$candidates"; [ -n "${CORES_FILTER:-}" ] && want="$CORES_FILTER"
   local c got=0
-  for c in $(cores_of_system "$SCOPE"); do
+  for c in $want; do
+    case " $candidates " in *" $c "*) ;; *) warn "core '$c' is not a listed core for $SCOPE — skipping"; continue ;; esac
     if [ -f "$MNT/usr/lib/libretro/${c}_libretro.so" ]; then
       cp -f "$MNT/usr/lib/libretro/${c}_libretro.so" "$PREFIX/cores/"
       cp -f "$MNT/usr/lib/libretro/${c}_libretro.info" "$PREFIX/cores/" 2>/dev/null || true
@@ -307,8 +329,10 @@ graft(){
     cp -f "$MNT/usr/lib/libretro/"*_libretro.so   "$STAGE/cores/" 2>/dev/null || true
     cp -f "$MNT/usr/lib/libretro/"*_libretro.info "$STAGE/cores/" 2>/dev/null || true
   else
-    local c
-    for c in $(cores_needed); do
+    # core set: an explicit GRAFT_CORES (e.g. the currently-installed set on --update,
+    # so per-core choices survive a version bump), else cores_needed (honors DEFAULTS_ONLY).
+    local c set="${GRAFT_CORES:-$(cores_needed)}"
+    for c in $set; do
       if [ -f "$MNT/usr/lib/libretro/${c}_libretro.so" ]; then
         cp -f "$MNT/usr/lib/libretro/${c}_libretro.so" "$STAGE/cores/"
         cp -f "$MNT/usr/lib/libretro/${c}_libretro.info" "$STAGE/cores/" 2>/dev/null || true
@@ -350,6 +374,26 @@ enable_system(){
 # ---- remove a system from the on-device selection file (keeps ROMs) ---------
 disable_system(){ [ -f "$SELECTION" ] || return 0; { grep -vxF "$1" "$SELECTION" || true; } > "$SELECTION.tmp"; mv "$SELECTION.tmp" "$SELECTION"; }
 
+# ---- drop a system's default-core override (if any) -------------------------
+drop_override(){ [ -f "$OVERRIDES" ] || return 0; { grep -vE "^$1\\|" "$OVERRIDES" || true; } > "$OVERRIDES.tmp"; mv "$OVERRIDES.tmp" "$OVERRIDES"; }
+
+# ---- delete all of a system's installed core files (honest state on remove) -
+remove_system_cores(){  # $1=system
+  local c
+  for c in $(cores_of_system "$1"); do
+    rm -f "$PREFIX/cores/${c}_libretro.so" "$PREFIX/cores/${c}_libretro.info" 2>/dev/null || true
+  done
+}
+
+# ---- remove ONE core of a system; auto-disable the system if it was the last -
+remove_core(){  # $1=system  $2=core
+  rm -f "$PREFIX/cores/${2}_libretro.so" "$PREFIX/cores/${2}_libretro.info" 2>/dev/null || true
+  [ "$(override_core "$1")" = "$2" ] && drop_override "$1"
+  local c remain=0
+  for c in $(cores_of_system "$1"); do [ -f "$PREFIX/cores/${c}_libretro.so" ] && remain=$((remain+1)); done
+  [ "$remain" = 0 ] && disable_system "$1"
+}
+
 # ---- set/query a persistent default-core override for a system ---------------
 set_core(){ mkdir -p "$PREFIX"; touch "$OVERRIDES"; { grep -vE "^$1\\|" "$OVERRIDES" || true; } > "$OVERRIDES.tmp"; echo "$1|$2" >> "$OVERRIDES.tmp"; mv "$OVERRIDES.tmp" "$OVERRIDES"; }
 override_core(){ [ -f "$OVERRIDES" ] || return 0; awk -F'|' -v s="$1" '$1==s{print $2}' "$OVERRIDES" | head -1; }
@@ -382,27 +426,31 @@ main(){
     render_configs; log "render-only: done."; exit 0
   fi
 
-  if [ "$QUICK" = 1 ]; then quick_setup; fi
+  # Quick Setup is a "reset to recommended" — force a rebuild so the all/defaults
+  # choice is actually applied even on an already-set-up device.
+  if [ "$QUICK" = 1 ]; then quick_setup; FORCE=1; fi
   SCOPE=""
   case "$ACTION" in
     install) [ -n "$ARG1" ] || die "--install needs a system name"; enable_system "$ARG1"; SCOPE="$ARG1" ;;
-    remove)  [ -n "$ARG1" ] || die "--remove needs a system name";  disable_system "$ARG1"; want_key > "$CORES_MARK"; render_configs; log "removed $ARG1"; exit 0 ;;
+    remove)  [ -n "$ARG1" ] || die "--remove needs a system name";  disable_system "$ARG1"; remove_system_cores "$ARG1"; drop_override "$ARG1"; want_key > "$CORES_MARK"; render_configs; log "removed $ARG1 (kept ROMs)"; exit 0 ;;
+    removecore) [ -n "$ARG1" ] && [ -n "$ARG2" ] || die "--remove-core needs <system> <core>";
+             remove_core "$ARG1" "$ARG2"; want_key > "$CORES_MARK"; render_configs; log "removed core $ARG2 from $ARG1"; exit 0 ;;
     setcore) [ -n "$ARG1" ] && [ -n "$ARG2" ] || die "--set-core needs <system> <core>";
              set_core "$ARG1" "$ARG2"; render_configs; log "default core for $ARG1 -> $ARG2"; exit 0 ;;
   esac
   if [ "$NOGRAFT" = 1 ]; then log "--no-graft: skipping download and render."; return; fi
 
   if [ -n "$SCOPE" ]; then
-    graft        # scoped: install just SCOPE's cores; leaves all other systems intact
+    graft        # scoped: install just SCOPE's cores (CORES_FILTER subset); other systems untouched
   else
-    # full-graft decision: forced, version changed, binary missing, wanted core set changed, or QOL absent
+    # full-graft decision: forced, version changed, binary missing, or QOL absent.
+    # On --update, re-install the CURRENT on-disk core set so per-core choices survive.
+    [ "$UPDATE" = 1 ] && GRAFT_CORES="$(installed_core_basenames)"
     local cur=""; [ -f "$INSTALLED_MARK" ] && cur=$(cat "$INSTALLED_MARK")
-    local have=""; [ -f "$CORES_MARK" ] && have=$(cat "$CORES_MARK")
     local need=0
     [ "$FORCE" = 1 ] && need=1
     [ "$cur" != "$RKVER" ] && need=1
     [ -x "$PREFIX/bin/retroarch" ] || need=1
-    [ "$(want_key)" != "$have" ] && need=1
     [ -f "$PREFIX/config/rocknix-base.cfg" ] || need=1
     if [ "$need" = 1 ]; then graft; else log "ROCKNIX $RKVER + configured cores already present."; fi
   fi
