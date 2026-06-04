@@ -101,8 +101,12 @@ conf_rows(){ grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$SYSTEMS_CONF"; }
 # Rows we actually install: filtered by the on-device selection file if present, else all.
 conf_rows_enabled(){
   if [ -f "$SELECTION" ]; then
+    # NB: use if/fi (not `&&`) so the while body — and thus this function — always
+    # returns 0. A trailing failing `grep` under `set -e -o pipefail` would otherwise
+    # abort any caller that pipes us (render, cores_needed) when the last/only system
+    # isn't enabled (e.g. after removing your last system).
     conf_rows | while IFS='|' read -r name rest; do
-      grep -qxF "$(echo "$name" | xargs)" "$SELECTION" && printf '%s|%s\n' "$name" "$rest"
+      if grep -qxF "$(echo "$name" | xargs)" "$SELECTION"; then printf '%s|%s\n' "$name" "$rest"; fi
     done
   else
     conf_rows
@@ -123,9 +127,11 @@ cores_needed(){
     }' | sort -u
   fi
 }
-# basenames of cores actually present on disk (the live installed set)
+# basenames of cores actually present on disk (the live installed set).
+# `find` (not a globbing `ls`) so an empty cores/ dir doesn't fail the pipeline
+# under `set -e -o pipefail` (would otherwise abort --update on a bare device).
 installed_core_basenames(){
-  ls "$PREFIX/cores/"*_libretro.so 2>/dev/null | sed 's,.*/,,; s,_libretro\.so$,,' | sort -u
+  find "$PREFIX/cores" -maxdepth 1 -name '*_libretro.so' 2>/dev/null | sed 's,.*/,,; s,_libretro\.so$,,' | sort -u
 }
 # what this run wants, as a stable key (enabled cores + all-cores flag) for change detection
 want_key(){ echo "$(cores_needed | tr '\n' ' ')|all=$ALL_CORES"; }
@@ -218,7 +224,7 @@ render_configs(){
   gen_es_systems > "${ES_TARGET}.tmp" && mv "${ES_TARGET}.tmp" "$ES_TARGET"
   rm -f "$ES_STALE" 2>/dev/null || true
   conf_rows_enabled | awk -F'|' '{gsub(/[[:space:]]/,"",$1); print $1}' | while read -r s; do
-    [ -n "$s" ] && mkdir -p "$ROMS/$s"
+    if [ -n "$s" ]; then mkdir -p "$ROMS/$s"; fi
   done
   # install/refresh the on-device "Update Emulators" Ports menu entry (kept in sync with the repo)
   if [ -f "$REPO_DIR/ports/Update Emulators.sh" ]; then

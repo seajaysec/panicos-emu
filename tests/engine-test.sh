@@ -90,6 +90,21 @@ t "remove still keeps ROMs"            "[ -f '$PE_ROMS/snes/game.sfc' ]"
 teardown
 
 setup
+printf 'snes\n' > "$PE_PREFIX/.enabled-systems"
+: > "$PE_PREFIX/cores/snes9x_libretro.so"
+bash "$HERE/bin/panicos-emu-install.sh" --remove snes --no-graft >/dev/null 2>&1
+t "remove of LAST system exits 0 (no set-e abort)" "[ \$? = 0 ]"
+bash "$HERE/bin/panicos-emu-install.sh" --render-only >/dev/null 2>&1
+t "render-only with empty selection exits 0" "[ \$? = 0 ]"
+teardown
+
+setup
+: > "$PE_PREFIX/.enabled-systems"
+bash "$HERE/bin/panicos-emu-install.sh" --render-only >/dev/null 2>&1
+t "render-only on a bare device exits 0" "[ \$? = 0 ]"
+teardown
+
+setup
 echo "20260101" > "$PE_PREFIX/.installed-rocknix"
 out="$(bash "$HERE/bin/panicos-emu-install.sh" --check-update 2>/dev/null)"
 t "check-update reports available" "echo \"\$out\" | grep -q '^update:'"

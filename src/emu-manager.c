@@ -627,7 +627,7 @@ static void on_settings(int up,int down,int acc,int bk){
     if(bk){ screen=ST_HOME; return; }
     if(acc){
         switch(set_sel){
-            case 0: cmd_start(SYNC "--all-cores",ST_HOME); screen=ST_PROGRESS; break;
+            case 0: cmd_start(SYNC "--all-cores --force",ST_HOME); screen=ST_PROGRESS; break;
             case 1: break; /* info only */
             case 2: cmd_start(SYNC "--render-only",ST_HOME); screen=ST_PROGRESS; break;
         }
