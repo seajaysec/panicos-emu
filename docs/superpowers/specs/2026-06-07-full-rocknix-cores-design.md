@@ -13,8 +13,9 @@ On-device investigation (ROCKNIX 20260601, RG35XX Pro / H700) corrected the prem
   The binary the user had came bundled inside a *PortMaster* port. `--all-cores` could never produce it.
 - The 2048 port failed because PortMaster's launcher runs `$raloc/retroarch`, which on PanicOS
   (CFW unrecognized) defaults to `/usr/bin/retroarch` — and PanicOS ships no retroarch in its
-  read-only `/usr`. That is a **base-image** gap, documented separately in `panicos.txt`
-  (recommended `/usr/bin/retroarch` dispatcher shim). **Out of scope here.**
+  read-only `/usr`. That is a **base-image** gap, captured separately for the PanicOS base-image
+  maintainer (a recommended `/usr/bin/retroarch` dispatcher shim) and delivered out of band — not
+  tracked in this repo. **Out of scope here.**
 - ROCKNIX 20260601 ships **129 real core `.so` binaries** (vs. 293 `.info` stubs). `systems.conf`
   currently exposes ~24 across 13 systems. ~100 shipped binaries are unexposed.
 - **Proven:** the panicos-emu sandbox `retroarch` + its lib closure resolve cleanly and can load
@@ -37,7 +38,8 @@ riding entirely on the existing install pipeline — not a launcher change.
    (`Recommended · default core` → `Recommended · all cores` → `Full · every system + core`).
 
 ### Non-goals
-- Literal 2048 / PortMaster retroarch ports → handled by `panicos.txt` (base-image fix).
+- Literal 2048 / PortMaster retroarch ports → a base-image fix, documented separately for the
+  PanicOS maintainer (out of band, not in this repo).
 - Content-less "boot to menu" launch entries → no ROCKNIX `.so` needs it; YAGNI.
 - Shipping BIOS/ROMs/content → user-supplied, as today.
 
@@ -228,6 +230,7 @@ In `src/emu-manager.c`:
 - `README.md`: bump "13 console systems" → full count; document the 3-state Quick Setup and the Full
   preset; note BIOS/content are user-supplied.
 - `systems.conf` header comment: mention `--full-setup` and the broadened coverage.
-- `panicos.txt`: already written (base-image PortMaster fix; cross-referenced, separate concern).
+- Base-image PortMaster fix: documented separately for the PanicOS maintainer (out of band, not
+  tracked in this repo); cross-referenced here as a separate concern.
 ```
 

@@ -544,7 +544,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ## Self-Review notes (author)
 
-- **Spec coverage:** §4 systems.conf → Task 1; §5 `--full-setup` → Task 2; §6 3-state toggle → Task 3; §9 docs → Task 4; §7 testing → tests embedded in Tasks 1–2 + Final verification. Non-goals (2048/PortMaster, content-less launch) intentionally excluded — `panicos.txt` already shipped for the base-image fix.
+- **Spec coverage:** §4 systems.conf → Task 1; §5 `--full-setup` → Task 2; §6 3-state toggle → Task 3; §9 docs → Task 4; §7 testing → tests embedded in Tasks 1–2 + Final verification. Non-goals (2048/PortMaster, content-less launch) intentionally excluded — the base-image fix is documented separately for the PanicOS maintainer (out of band, not tracked in this repo).
 - **Edge cases honored:** ZX81 core literally named `81` (used verbatim, fixture-validated); `scummvm` extensions reduced to `scummvm svm`; empty/multi-`.info` cores (`gearlynx`, `mupen64plus`, `skyemu`) not surfaced as primaries but remain in the fixture (still grafted by `--all-cores`).
 - **Type/name consistency:** `qs_mode`/`NQSMODE` used consistently in Task 3 (replaces `qs_allcores`); `FULL`/`full_setup`/`--full-setup`/`SELECTION` consistent across Task 2; `conf_rows_all`/`CORES_FIXTURE`/`UNKNOWN_CORES` consistent in Task 1.
 - **No placeholders:** every code/step block is concrete and complete.
