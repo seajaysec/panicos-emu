@@ -127,7 +127,7 @@ t "system names are unique" \
 
 # every core referenced by systems.conf must be a real ROCKNIX core (catches typos / case)
 UNKNOWN_CORES="$(conf_rows_all | awk -F'|' '{print $3}' | tr ' ' '\n' | sed '/^$/d' \
-                 | LC_ALL=C sort -u | comm -23 - <(LC_ALL=C sort -u "$CORES_FIXTURE"))"
+                 | LC_ALL=C sort -u | LC_ALL=C comm -23 - <(LC_ALL=C sort -u "$CORES_FIXTURE"))"
 t "every core in systems.conf is a real ROCKNIX core" "[ -z \"\$UNKNOWN_CORES\" ]"
 [ -z "$UNKNOWN_CORES" ] || printf "  (unknown cores: %s)\n" "$UNKNOWN_CORES"
 
