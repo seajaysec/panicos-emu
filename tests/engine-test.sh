@@ -127,14 +127,15 @@ t "system names are unique" \
 
 # every core referenced by systems.conf must be a real ROCKNIX core (catches typos / case)
 UNKNOWN_CORES="$(conf_rows_all | awk -F'|' '{print $3}' | tr ' ' '\n' | sed '/^$/d' \
-                 | sort -u | comm -23 - <(sort -u "$CORES_FIXTURE"))"
+                 | LC_ALL=C sort -u | comm -23 - <(LC_ALL=C sort -u "$CORES_FIXTURE"))"
 t "every core in systems.conf is a real ROCKNIX core" "[ -z \"\$UNKNOWN_CORES\" ]"
+[ -z "$UNKNOWN_CORES" ] || printf "  (unknown cores: %s)\n" "$UNKNOWN_CORES"
 
 # Full coverage must include representatives from each new family
 for s in arcade neogeo psx psp dreamcast saturn 3do c64 amiga msx zxspectrum zx81 \
          dos scummvm doom quake wolf3d pico8 tic80 wasm4 atari2600 lynx vectrex; do
   t "systems.conf includes $s" \
-    "conf_rows_all | awk -F'|' '{n=\$1;gsub(/[[:space:]]/,\"\",n);print n}' | grep -qx $s"
+    "conf_rows_all | awk -F'|' '{n=\$1;gsub(/[[:space:]]/,\"\",n);print n}' | grep -qxF '$s'"
 done
 
 exit $FAIL
