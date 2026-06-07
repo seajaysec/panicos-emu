@@ -113,4 +113,28 @@ out2="$(bash "$HERE/bin/panicos-emu-install.sh" --check-update 2>/dev/null)"
 t "check-update reports current"   "echo \"\$out2\" | grep -q '^uptodate:'"
 teardown
 
+# ---- systems.conf integrity (Full ROCKNIX coverage) ----
+CORES_FIXTURE="$HERE/tests/fixtures/rocknix-cores.txt"
+conf_rows_all(){ grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$HERE/systems.conf"; }
+
+t "fixture exists" "[ -s '$CORES_FIXTURE' ]"
+t "every systems.conf row has exactly 5 pipe-fields" \
+  "[ -z \"\$(conf_rows_all | awk -F'|' 'NF!=5{print NR}')\" ]"
+t "every row has non-empty name and extensions" \
+  "[ -z \"\$(conf_rows_all | awk -F'|' '{n=\$1;e=\$4;gsub(/[[:space:]]/,\"\",n);gsub(/^[ \t]+|[ \t]+\$/,\"\",e);if(n==\"\"||e==\"\")print NR}')\" ]"
+t "system names are unique" \
+  "[ \"\$(conf_rows_all | awk -F'|' '{n=\$1;gsub(/[[:space:]]/,\"\",n);print n}' | sort | uniq -d | wc -l | tr -d ' ')\" = 0 ]"
+
+# every core referenced by systems.conf must be a real ROCKNIX core (catches typos / case)
+UNKNOWN_CORES="$(conf_rows_all | awk -F'|' '{print $3}' | tr ' ' '\n' | sed '/^$/d' \
+                 | sort -u | comm -23 - <(sort -u "$CORES_FIXTURE"))"
+t "every core in systems.conf is a real ROCKNIX core" "[ -z \"\$UNKNOWN_CORES\" ]"
+
+# Full coverage must include representatives from each new family
+for s in arcade neogeo psx psp dreamcast saturn 3do c64 amiga msx zxspectrum zx81 \
+         dos scummvm doom quake wolf3d pico8 tic80 wasm4 atari2600 lynx vectrex; do
+  t "systems.conf includes $s" \
+    "conf_rows_all | awk -F'|' '{n=\$1;gsub(/[[:space:]]/,\"\",n);print n}' | grep -qx $s"
+done
+
 exit $FAIL
