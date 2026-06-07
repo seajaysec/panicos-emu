@@ -223,8 +223,9 @@ static char cf_title[64], cf_body[160], cf_cmd[256];
 /* settings */
 static int set_sel=0;
 
-/* quick setup */
-static int qs_allcores=0;          /* 0 = default core per system, 1 = all cores */
+/* quick setup: 0 = recommended/default core, 1 = recommended/all cores, 2 = Full (every system+core) */
+static int qs_mode=0;
+#define NQSMODE 3
 
 /* ---------- Home ---------- */
 static const char *HOME[]={ "Quick Setup", "Library", "Update", "Settings", "Help / ROMs" };
@@ -478,17 +479,30 @@ static const char *QS_CHIPS=
 #define NQS 4   /* 0 toggle, 1 Install, 2 Customize, 3 Cancel */
 static void render_qsetup(void){
     draw_text(28,20,3,"Quick Setup",110,200,255);
-    draw_text(30,66,1,"Installs the recommended emulator set:",180,185,200);
-    draw_text(36,88,1,QS_CHIPS,200,205,215);
-    draw_text(30,148,1,"Nintendo DS is excluded (too slow on this handheld).",170,150,150);
-    draw_text(30,168,1,"~1.5 GB download - a few minutes - needs Wi-Fi.",200,200,150);
+    static const char *QS_MODE_LBL[3]={
+        "Recommended - default core", "Recommended - all cores", "Full - every system + core" };
+    static const char *QS_MODE_SUB[3]={
+        "one core per recommended system",
+        "every core each recommended system lists",
+        "ALL ~129 ROCKNIX cores, every system enabled" };
+    if(qs_mode==2){
+        draw_text(30,66,1,"Installs EVERY system & core ROCKNIX ships:",180,185,200);
+        draw_text(36,88,1,"consoles + arcade + computers + DOS + game engines",200,205,215);
+        draw_text(30,148,1,"Includes Nintendo DS and all niche systems.",170,150,150);
+        draw_text(30,168,1,"Large download - many systems need BIOS/content you add.",200,200,150);
+    } else {
+        draw_text(30,66,1,"Installs the recommended emulator set:",180,185,200);
+        draw_text(36,88,1,QS_CHIPS,200,205,215);
+        draw_text(30,148,1,"Nintendo DS is excluded (too slow on this handheld).",170,150,150);
+        draw_text(30,168,1,"~1.5 GB download - a few minutes - needs Wi-Fi.",200,200,150);
+    }
 
-    /* row 0: cores toggle */
+    /* row 0: cores/preset toggle */
     int y0=206;
     if(hsel==0) fill(24,y0-8,SCREEN_W-48,42,36,78,140);
-    char tog[64]; snprintf(tog,sizeof tog,"Cores: %s", qs_allcores?"All per system":"Default core only");
+    char tog[64]; snprintf(tog,sizeof tog,"Mode: %s", QS_MODE_LBL[qs_mode]);
     draw_text(44,y0,2,tog,210,215,160);
-    draw_text(44,y0+22,1, qs_allcores?"every emulator each system lists" : "one emulator per system (add more later)",150,155,170);
+    draw_text(44,y0+22,1, QS_MODE_SUB[qs_mode],150,155,170);
 
     static const char*acts[]={ "Install", "Customize in Library", "Cancel" };
     for(int i=0;i<3;i++){ int y=262+i*52;
@@ -605,10 +619,12 @@ static void on_qsetup(int up,int down,int acc,int bk){
     if(bk){ screen=ST_HOME; return; }
     if(acc){
         switch(hsel){
-            case 0: qs_allcores=!qs_allcores; break;   /* toggle cores choice */
-            case 1: cmd_start(qs_allcores ? SYNC "--quick-setup"
-                                          : SYNC "--quick-setup --defaults", ST_HOME);
-                    screen=ST_PROGRESS; break;
+            case 0: qs_mode=(qs_mode+1)%NQSMODE; break;   /* cycle preset */
+            case 1:
+                if(qs_mode==2)      cmd_start(SYNC "--full-setup",ST_HOME);
+                else if(qs_mode==1) cmd_start(SYNC "--quick-setup",ST_HOME);
+                else                cmd_start(SYNC "--quick-setup --defaults",ST_HOME);
+                screen=ST_PROGRESS; break;
             case 2: lib_filter=0; lib_sel=lib_top=0; inventory_reload(); lib_clamp(); screen=ST_LIBRARY; break;
             case 3: screen=ST_HOME; break;
         }
