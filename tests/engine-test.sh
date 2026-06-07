@@ -138,4 +138,13 @@ for s in arcade neogeo psx psp dreamcast saturn 3do c64 amiga msx zxspectrum zx8
     "conf_rows_all | awk -F'|' '{n=\$1;gsub(/[[:space:]]/,\"\",n);print n}' | grep -qxF '$s'"
 done
 
+setup
+bash "$HERE/bin/panicos-emu-install.sh" --full-setup --no-graft >/dev/null 2>&1
+t "full-setup writes enabled-systems"        "[ -s '$PE_PREFIX/.enabled-systems' ]"
+t "full-setup enables EVERY systems.conf row" \
+  "[ \"\$(grep -vE '^[[:space:]]*#|^[[:space:]]*\$' '$HERE/systems.conf' | wc -l | tr -d ' ')\" = \"\$(sort -u '$PE_PREFIX/.enabled-systems' | grep -c .)\" ]"
+t "full-setup includes nds (not excluded like quick-setup)" "grep -qx nds '$PE_PREFIX/.enabled-systems'"
+t "full-setup includes arcade" "grep -qx arcade '$PE_PREFIX/.enabled-systems'"
+teardown
+
 exit $FAIL
