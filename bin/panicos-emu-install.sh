@@ -23,6 +23,7 @@
 #   panicos-emu-install.sh              # install/update to rocknix.lock; graft if cores/version changed
 #   panicos-emu-install.sh --force      # re-graft binaries unconditionally
 #   panicos-emu-install.sh --all-cores  # also copy EVERY ROCKNIX core (parity); remembered across runs
+#   panicos-emu-install.sh --full-setup # enable EVERY system + graft all cores (the "Full" preset)
 #   panicos-emu-install.sh --render-only# only re-render configs/es_systems (self-heal); no download
 ###############################################################################
 set -euo pipefail
@@ -57,7 +58,7 @@ log(){  printf '%s[emu]%s %s\n' "$c_i" "$c_0" "$*"; }
 warn(){ printf '%s[emu] WARN:%s %s\n' "$c_w" "$c_0" "$*" >&2; }
 die(){  printf '%s[emu] ERROR:%s %s\n' "$c_e" "$c_0" "$*" >&2; exit 1; }
 
-FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0; QUICK=0; NOGRAFT=0; CHECK=0; UPDATE=0; DEFAULTS_ONLY=0
+FORCE=0; RENDER_ONLY=0; ALL_CORES=0; STATUS=0; QUICK=0; NOGRAFT=0; CHECK=0; UPDATE=0; DEFAULTS_ONLY=0; FULL=0
 ACTION=""; ARG1=""; ARG2=""; CORES_FILTER=""
 for a in "$@"; do case "$a" in
   --force) FORCE=1 ;;
@@ -66,6 +67,7 @@ for a in "$@"; do case "$a" in
   --render-only|--repair) RENDER_ONLY=1 ;;
   --status) STATUS=1 ;;
   --quick-setup) QUICK=1 ;;
+  --full-setup) FULL=1 ;;
   --no-graft) NOGRAFT=1 ;;
   --check-update) CHECK=1 ;;
   --update) UPDATE=1 ;;
@@ -417,6 +419,14 @@ quick_setup(){
   log "quick setup: $(wc -l < "$SELECTION" | tr -d ' ') systems selected"
 }
 
+# ---- enable EVERY system + flag all-cores graft (the "Full" preset) ---------
+full_setup(){
+  mkdir -p "$PREFIX"
+  conf_rows | awk -F'|' '{n=$1; gsub(/[[:space:]]/,"",n); if(n!="") print n}' > "$SELECTION"
+  ALL_CORES=1
+  log "full setup: $(grep -c . "$SELECTION" | tr -d ' ') systems selected (all cores)"
+}
+
 # ---------------------------------------------------------------------------
 main(){
   if [ "$STATUS" = 1 ]; then print_status; exit 0; fi
@@ -435,6 +445,7 @@ main(){
   # Quick Setup is a "reset to recommended" — force a rebuild so the all/defaults
   # choice is actually applied even on an already-set-up device.
   if [ "$QUICK" = 1 ]; then quick_setup; FORCE=1; fi
+  if [ "$FULL" = 1 ]; then full_setup; FORCE=1; fi
   SCOPE=""
   case "$ACTION" in
     install) [ -n "$ARG1" ] || die "--install needs a system name"; enable_system "$ARG1"; SCOPE="$ARG1" ;;

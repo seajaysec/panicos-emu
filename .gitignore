@@ -6,3 +6,6 @@
 SYSTEM
 .DS_Store
 .superpowers/
+
+# local-only base-image notes (not part of this repo)
+panicos.txt
