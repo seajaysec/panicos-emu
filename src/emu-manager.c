@@ -479,9 +479,9 @@ static const char *QS_CHIPS=
 #define NQS 4   /* 0 toggle, 1 Install, 2 Customize, 3 Cancel */
 static void render_qsetup(void){
     draw_text(28,20,3,"Quick Setup",110,200,255);
-    static const char *QS_MODE_LBL[3]={
+    static const char *QS_MODE_LBL[NQSMODE]={
         "Recommended - default core", "Recommended - all cores", "Full - every system + core" };
-    static const char *QS_MODE_SUB[3]={
+    static const char *QS_MODE_SUB[NQSMODE]={
         "one core per recommended system",
         "every core each recommended system lists",
         "ALL ~129 ROCKNIX cores, every system enabled" };
