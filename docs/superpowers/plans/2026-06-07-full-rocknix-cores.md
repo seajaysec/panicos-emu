@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Expose every ROCKNIX-shipped libretro core (~129 binaries, ~70 EmulationStation systems) as a manageable/playable system, surfaced via a new "Full" third state of the manager's Quick Setup toggle.
+**Goal:** Expose every ROCKNIX-shipped libretro core (~129 binaries, ~80 EmulationStation systems) as a manageable/playable system, surfaced via a new "Full" third state of the manager's Quick Setup toggle.
 
 **Architecture:** No new subsystem — ride the existing install pipeline. Expand `systems.conf` (the single source of truth that already drives status, Library, ES-config generation, ROM folders, and per-core management); add a `--full-setup` installer mode that selects all systems and grafts all cores (reusing the `--all-cores` and selection plumbing); turn the GUI's boolean cores toggle into a 3-state preset. Cores absent from the image are already skipped non-fatally, so broad coverage is safe.
 
@@ -17,7 +17,7 @@
 | File | Responsibility | Action |
 |------|----------------|--------|
 | `tests/fixtures/rocknix-cores.txt` | Authoritative list of core basenames ROCKNIX 20260601 ships; lets CI validate `systems.conf` core names offline | Create |
-| `systems.conf` | Declarative system→cores→extensions→platform map | Modify (expand to ~70 rows) |
+| `systems.conf` | Declarative system→cores→extensions→platform map | Modify (expand to 80 rows) |
 | `tests/engine-test.sh` | Sandbox verb-logic + config tests | Modify (add systems.conf integrity + `--full-setup` tests) |
 | `bin/panicos-emu-install.sh` | Installer/engine | Modify (add `--full-setup`) |
 | `src/emu-manager.c` | SDL2 manager GUI | Modify (3-state Quick Setup toggle) |

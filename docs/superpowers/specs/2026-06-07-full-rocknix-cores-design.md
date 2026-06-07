@@ -218,7 +218,7 @@ In `src/emu-manager.c`:
 
 - **Download/disk size:** all-cores graft + full lib closure is large. Mitigation: cached image
   (already), explicit GUI warning on the Full state, and it's opt-in.
-- **ES system sprawl (~70 systems):** expected and intended for "Full". Recommended preset remains
+- **ES system sprawl (~80 systems):** expected and intended for "Full". Recommended preset remains
   the lean default; quick-setup default core path is untouched.
 - **Empty systems without BIOS/content:** show no games (harmless); documented in README.
 - **Theme gaps:** cosmetic fallback only.
