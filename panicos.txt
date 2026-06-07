@@ -1,0 +1,115 @@
+===============================================================================
+panicos.txt — recommended PanicOS *base image* fixes
+                so RetroArch-based PortMaster ports launch
+                WITHOUT building RetroArch into the base image
+===============================================================================
+
+Audience: the PanicOS base-image maintainer (this is NOT a panicos-emu change).
+Scope:    make ports like PortMaster's "2048" boot. These are unrelated to the
+          panicos-emu "Full cores" feature — that feature exposes ROCKNIX-shipped
+          cores as EmulationStation systems and already works via its own sandbox
+          launcher. This file is only about the /usr/bin/retroarch gap that breaks
+          *PortMaster* retroarch ports.
+
+-------------------------------------------------------------------------------
+1. THE PROBLEM (evidence)
+-------------------------------------------------------------------------------
+Symptom: running a PortMaster retroarch port from a terminal:
+    ./2048.sh: line 56: /usr/bin/retroarch: No such file or directory
+
+Why (confirmed on device, PanicOS 1.0 / RG35XX Pro / H700):
+
+  - PortMaster retroarch ports end with, e.g. (roms/ports/2048.sh:56):
+        $raloc/retroarch $raconf -L $GAMEDIR/2048_libretro.so.${DEVICE_ARCH}
+    `$raloc` is chosen by a per-port if/elif chain keyed on CFW_NAME. PanicOS
+    (CFW_NAME="PanicOS") matches none of the named branches, so it hits the
+    final `else` -> raloc="/usr/bin".
+
+  - PanicOS deliberately ships NO emulators. `/usr/bin/retroarch` does not exist
+    and /usr is a read-only squashfs, so the port dies immediately.
+
+  - PanicOS's PortMaster integration (PortMaster/mod_PanicOS.txt) only wires up
+    the NATIVE / westonwrap port path (Godot games, sway fullscreen). It has no
+    handling for retroarch-based ports — because stock PanicOS has no retroarch.
+
+  => Every retroarch-based PortMaster port is broken on PanicOS the same way,
+     not just 2048. (2048 itself is a PortMaster-bundled core; ROCKNIX ships
+     2048_libretro.info but no 2048_libretro.so, so it is not obtainable from
+     ROCKNIX at all.)
+
+Already proven to work: panicos-emu grafts a fully-resolved sandbox RetroArch at
+    /storage/emulators/retroarch/bin/retroarch
+and its lib closure loads cores cleanly — including PortMaster's bundled
+2048_libretro.so.aarch64 (verified with the dynamic loader). So the ONLY thing
+missing for PortMaster ports is a /usr/bin/retroarch that points at it.
+
+-------------------------------------------------------------------------------
+2. RECOMMENDED FIX — ship a tiny dispatcher shim at /usr/bin/retroarch
+-------------------------------------------------------------------------------
+Add a ~20-line shell script (NOT a RetroArch build) to the base image at
+/usr/bin/retroarch. It finds whatever sandbox RetroArch is installed (today:
+panicos-emu) and execs it with the correct runtime env; if none is installed it
+prints a friendly hint instead of a cryptic "No such file" error.
+
+This is port-agnostic (no per-port patching), respects "no retroarch binary in
+the base image" (it's a dispatcher, not an emulator), and also helps anything
+else that expects a system retroarch.
+
+    #!/bin/bash
+    # /usr/bin/retroarch — PanicOS dispatcher shim (NOT a RetroArch build).
+    # PanicOS ships no emulators. panicos-emu grafts a sandboxed RetroArch into
+    # /storage; PortMaster retroarch ports call /usr/bin/retroarch, so this shim
+    # locates the installed sandbox build and execs it with the right runtime.
+    #
+    # Override the location with PANICOS_RETROARCH if a future provider differs.
+    SANDBOX="${PANICOS_RETROARCH_DIR:-/storage/emulators/retroarch}"
+    RA="${PANICOS_RETROARCH:-$SANDBOX/bin/retroarch}"
+    if [ ! -x "$RA" ]; then
+      echo "RetroArch is not installed on PanicOS." >&2
+      echo "Open Ports > 'Update Emulators' to install it (panicos-emu)." >&2
+      sleep 5
+      exit 127
+    fi
+    # Mirror panicos-emu's sandbox runtime (config/retroarch.sh):
+    #   - lib closure first on the search path
+    #   - H700/Panfrost packing quirk
+    export LD_LIBRARY_PATH="$SANDBOX/lib:/usr/lib:/lib:${LD_LIBRARY_PATH}"
+    export PAN_MESA_DEBUG="${PAN_MESA_DEBUG:-forcepack}"
+    exec "$RA" "$@"
+
+Notes:
+  - Do NOT add panicos-emu's --config/--appendconfig here. PortMaster ports pass
+    their own config via $raconf (empty on the PanicOS else-branch), and forcing
+    a console-tuned override onto arbitrary ports is wrong. Let RetroArch use its
+    own defaults (HOME=/storage).
+  - Keep it executable (0755) and owned by root in the squashfs.
+  - Because /usr is read-only, this must be baked in at base-image BUILD time
+    (e.g. as a file in the panicos base package), not created at runtime.
+
+-------------------------------------------------------------------------------
+3. SECONDARY / DEFENSE-IN-DEPTH (optional)
+-------------------------------------------------------------------------------
+a) Teach PortMaster about PanicOS retroarch ports. In PortMaster's device
+   detection (control.txt / device_info), give PanicOS a retroarch location
+   instead of falling through to /usr/bin. This helps modern ports that honor
+   the control-provided $raloc, but is LESS robust than the shim because legacy
+   ports (like 2048.sh) hardcode their own if/elif and re-derive raloc=/usr/bin
+   regardless — so the shim in section 2 is still the reliable fix.
+
+b) If a /usr/bin shim is undesirable, an equivalent is a writable, on-PATH
+   wrapper plus a PortMaster mod that sets raloc to its directory — but ports
+   call $raloc/retroarch by ABSOLUTE path, so PATH alone does not help and this
+   again depends on per-port cooperation. The /usr/bin shim avoids all of that.
+
+-------------------------------------------------------------------------------
+4. CAVEATS / THINGS TO VERIFY AFTER THE FIX
+-------------------------------------------------------------------------------
+  - gptokeyb: ports run `$GPTOKEYB "retroarch" &` before launching. That is
+    independent of this shim and already handled by mod_PanicOS.txt's runtime.
+  - 32-bit ports: some PortMaster cores are armhf (2048 ships both
+    .so.armhf and .so.aarch64; the port picks by $DEVICE_ARCH). The sandbox
+    RetroArch is aarch64, so only aarch64 cores will load through it. armhf-only
+    ports remain unsupported unless a 32-bit runtime is provided (out of scope).
+  - The shim depends on panicos-emu being installed. Until the user runs
+    "Update Emulators", retroarch ports will show the friendly hint and exit.
+===============================================================================
