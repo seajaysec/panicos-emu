@@ -17,9 +17,10 @@ PanicOS is a deliberately lean, ROCKNIX-lineage appliance for the norns/PanicTra
 
 ## ✨ What you get
 
-- **13 console systems** available — Game Boy/Color, NES, SNES, GBA, Genesis, Master System, Game Gear, ColecoVision, Neo Geo Pocket, PC Engine, WonderSwan, N64, Nintendo DS.
+- **~80 systems available** — from the recommended console set (Game Boy/Color, NES, SNES, GBA, Genesis, Master System, Game Gear, ColecoVision, Neo Geo Pocket, PC Engine, WonderSwan, N64, Nintendo DS) up to full ROCKNIX parity: arcade (MAME/FBNeo/Neo Geo), PlayStation, PSP, Dreamcast, Saturn, 3DO, every Atari/handheld, home computers (C64, Amiga, MSX, CPC, ZX, X68000, PC-98), DOS, ScummVM, and game engines (Doom, Quake 1/2, Wolf3D, PICO-8, TIC-80, WASM-4, EasyRPG).
 - **Per-core control, on the device** — each system lists several cores (e.g. SNES → `snes9x` / `snes9x2010` / `beetle_supafaust`). In the manager you install exactly the cores you want, set the per-system **default**, **update**, or **remove** them individually — no SSH, no config editing. Installs are **scoped** (touching one system never re-downloads the rest) and the **1.5 GB ROCKNIX image is cached**, so per-core operations are quick.
 - **ROCKNIX's device-tuned QOL, inherited** — its full base `retroarch.cfg`, **153 per-core option presets** (mupen64 `4:3`/dynamic-recompiler, melonDS layout/JIT, …), per-core `.opt` files, and **1,800+ slang shaders** (LCD/scanline/CRT filters for the 640×480 panel) — all layered *under* our PanicOS overrides so nothing regresses.
+- **One-tap presets** — Quick Setup's Mode toggle picks how much to install: **Recommended · default core** (one core per recommended system), **Recommended · all cores** (every core each recommended system lists), or **Full · every system + core** (all ~129 ROCKNIX cores, every system enabled). Full is a large download and many of its systems need BIOS/content you supply.
 - **Self-updating** — a GitHub Action tracks ROCKNIX daily; an on-device **Update Emulators** menu entry applies updates when *you* choose.
 - **Correct on this exact hardware** — Wayland/`glcore` video and SDL2→PipeWire audio routed exactly the way PanicOS routes everything else (no muted-sink surprises, no codec-rate crackle).
 - **Reversible & non-invasive** — everything lives in `/storage` plus one backed-up `/etc` file. One command restores stock.
